@@ -46,160 +46,207 @@
  * Ver 1.00 2019/4/4
  */
 
-#include <fcntl.h>
-#include <math.h>
-#include <signal.h>
-#include <stdio.h>
-#include <termios.h>
-#include <unistd.h>
-#include <string>
-#include "ros/ros.h"
-#include "sensor_msgs/Imu.h"
-#include "std_msgs/Int32.h"
+#include <fmt/format.h>
+#include <boost/algorithm/string.hpp>
 
-#include <sys/ioctl.h>
+#include <tamagawa_imu_driver/tag_serial_driver.h>
 
-std::string device = "/dev/ttyUSB0";
-std::string imu_type = "noGPS";
-std::string rate = "50";
+static constexpr uint16_t STATUS_MASK = 0x8000;  //!< @brief Bit mask of error flag
 
-struct termios old_conf_tio;
-struct termios conf_tio;
-
-int fd;
-int counter;
-int raw_data;
-
-sensor_msgs::Imu imu_msg;
-
-int serial_setup(const char * device)
+TagSerialDriver::TagSerialDriver() : receive_count_(0)
 {
-  int fd = open(device, O_RDWR);
+  pnh_.param<std::string>("imu_frame_id", imu_frame_id_, "tamagawa/imu_link");
+  pnh_.param<std::string>("port", port_, "/dev/imu");
 
-  speed_t BAUDRATE = B115200;
+  pub_imu_ = pnh_.advertise<sensor_msgs::Imu>("imu/data_raw", 1000);
 
-  conf_tio.c_cflag += CREAD;   // 受信有効
-  conf_tio.c_cflag += CLOCAL;  // ローカルライン（モデム制御なし）
-  conf_tio.c_cflag += CS8;     // データビット:8bit
-  conf_tio.c_cflag += 0;       // ストップビット:1bit
-  conf_tio.c_cflag += 0;
+  updater_.add("imu_data", this, &TagSerialDriver::checkStatus);
+  updater_.setHardwareID("tamagawa");
 
-  cfsetispeed(&conf_tio, BAUDRATE);
-  cfsetospeed(&conf_tio, BAUDRATE);
+  imu_msg_.header.frame_id = imu_frame_id_;
+  imu_msg_.orientation.x = 0.0;
+  imu_msg_.orientation.y = 0.0;
+  imu_msg_.orientation.z = 0.0;
+  imu_msg_.orientation.w = 1.0;
 
-  tcsetattr(fd, TCSANOW, &conf_tio);
-  ioctl(fd, TCSETS, &conf_tio);
-  return fd;
+  timer_ = pnh_.createTimer(ros::Rate(1.0), &TagSerialDriver::onTimer, this);
+
+  // Initialize and open serial port
+  initialize();
 }
 
-void receive_ver_req(const std_msgs::Int32::ConstPtr & msg)
+TagSerialDriver::~TagSerialDriver()
 {
-  char ver_req[] = "$TSC,VER*29\x0d\x0a";
-  int ver_req_data = write(fd, ver_req, sizeof(ver_req));
-  ROS_INFO("Send Version Request:%s", ver_req);
+  // Close serial port
+  finalize();
 }
 
-void receive_offset_cancel_req(const std_msgs::Int32::ConstPtr & msg)
+void TagSerialDriver::initialize()
 {
-  char offset_cancel_req[32];
-  sprintf(offset_cancel_req, "$TSC,OFC,%d\x0d\x0a", msg->data);
-  int offset_cancel_req_data = write(fd, offset_cancel_req, sizeof(offset_cancel_req));
-  ROS_INFO("Send Offset Cancel Request:%s", offset_cancel_req);
+  // Preparation for a subsequent run() invocation
+  io_.reset();
+  serial_port_ = std::make_shared<asio::serial_port>(io_);
+  read_timer_ = std::make_shared<asio::steady_timer>(io_);
+
+  // Open the serial port using the specified device name
+  try {
+    serial_port_->open(port_);
+  } catch (const asio::system_error & e) {
+    throw std::runtime_error(fmt::format("Could not open serial port: {}", e.what()));
+  }
+
+  // Set options on the serial port
+  serial_port_->set_option(asio::serial_port_base::baud_rate(115200));
+  serial_port_->set_option(asio::serial_port_base::character_size(8));
+  serial_port_->set_option(
+    asio::serial_port_base::flow_control(asio::serial_port_base::flow_control::none));
+  serial_port_->set_option(asio::serial_port_base::parity(asio::serial_port_base::parity::none));
+  serial_port_->set_option(
+    asio::serial_port_base::stop_bits(asio::serial_port_base::stop_bits::one));
+
+  // Set the timer's expiry time relative to now
+  read_timer_->expires_from_now(std::chrono::seconds(3));
+  // Start an asynchronous wait on the timer
+  read_timer_->async_wait(
+    boost::bind(&TagSerialDriver::onReadTimer, this, asio::placeholders::error));
+
+  boost::thread thr_io(boost::bind(&asio::io_service::run, &io_));
+
+  // Send BIN data request
+  std::string data = "$TSC,BIN,30*02\r\n";
+
+  serial_port_->async_write_some(
+    asio::buffer(data), boost::bind(
+                          &TagSerialDriver::onWrite, this, asio::placeholders::error,
+                          asio::placeholders::bytes_transferred));
+
+  receive();
 }
 
-void receive_heading_reset_req(const std_msgs::Int32::ConstPtr & msg)
+void TagSerialDriver::finalize()
 {
-  char heading_reset_req[] = "$TSC,HRST*29\x0d\x0a";
-  int heading_reset_req_data = write(fd, heading_reset_req, sizeof(heading_reset_req));
-  ROS_INFO("Send Heading reset Request:%s", heading_reset_req);
+  serial_port_->close();
+  io_.stop();
 }
 
-void shutdown_cmd(int sig)
+void TagSerialDriver::receive()
 {
-  tcsetattr(fd, TCSANOW, &old_conf_tio);  // Revert to previous settings
-  close(fd);
-  ROS_INFO("Port closed");
-  ros::shutdown();
+  // asynchronously read data
+  asio::async_read_until(
+    *serial_port_, buffer_, "\n",
+    boost::bind(
+      &TagSerialDriver::onRead, this, asio::placeholders::error,
+      asio::placeholders::bytes_transferred));
 }
 
-#include <boost/asio.hpp>
-using namespace boost::asio;
-
-int main(int argc, char ** argv)
+void TagSerialDriver::checkStatus(diagnostic_updater::DiagnosticStatusWrapper & stat)
 {
-  ros::init(argc, argv, "tag_serial_driver", ros::init_options::NoSigintHandler);
-  ros::NodeHandle n;
-  ros::Publisher pub = n.advertise<sensor_msgs::Imu>("imu/data_raw", 1000);
-  ros::Subscriber sub1 = n.subscribe("receive_ver_req", 10, receive_ver_req);
-  ros::Subscriber sub2 = n.subscribe("receive_offset_cancel_req", 10, receive_offset_cancel_req);
-  ros::Subscriber sub3 = n.subscribe("receive_heading_reset_req", 10, receive_heading_reset_req);
+  if (receive_count_ <= 0) {
+    stat.summary(DiagStatus::WARN, "Not Received");
+    return;
+  }
 
-  ros::NodeHandle nh("~");
-  std::string imu_frame_id = "imu";
-  nh.getParam("imu_frame_id", imu_frame_id);
+  // Buit In Test error occurred
+  if ((imu_status_ & STATUS_MASK) == STATUS_MASK) {
+    stat.summary(DiagStatus::ERROR, "Buit In Test error");
+    stat.addf("status", "%02X", imu_status_);
+    return;
+  }
 
-  std::string port = "/dev/ttyUSB0";
-  nh.getParam("port", port);
+  if (!is_checksum_ok_) {
+    stat.summary(DiagStatus::ERROR, "Checksum Error");
+    return;
+  }
 
-  io_service io;
-  serial_port serial_port(io, port.c_str());
-  serial_port.set_option(serial_port_base::baud_rate(115200));
-  serial_port.set_option(serial_port_base::character_size(8));
-  serial_port.set_option(serial_port_base::flow_control(serial_port_base::flow_control::none));
-  serial_port.set_option(serial_port_base::parity(serial_port_base::parity::none));
-  serial_port.set_option(serial_port_base::stop_bits(serial_port_base::stop_bits::one));
+  stat.summary(DiagStatus::OK, "OK");
+}
 
-  std::string wbuf = "$TSC,BIN,30\x0d\x0a";
-  std::size_t length;
-  serial_port.write_some(buffer(wbuf));
+void TagSerialDriver::onRead(const asio::error_code & error, const std::size_t bytes_transfered)
+{
+  if (error) {
+    if (error != asio::error::operation_aborted) {
+      ROS_ERROR("Read error: %s", error.message().c_str());
+    }
+    return;
+  } else {
+    std::ostringstream oss;
+    oss << &buffer_;
+    const std::string data = oss.str();
 
-  ros::Rate loop_rate(30);
+    if (boost::starts_with(data, "$TSC,BIN,") && data.length() == 58) {
+      // Data received, so cancel timer operation
+      read_timer_->cancel();
 
-  imu_msg.orientation.x = 0.0;
-  imu_msg.orientation.y = 0.0;
-  imu_msg.orientation.z = 0.0;
-  imu_msg.orientation.w = 1.0;
+      imu_msg_.header.stamp = ros::Time::now();
 
-  while (ros::ok()) {
-    ros::spinOnce();
+      int raw_data = ((((data[15] << 8) & 0xFFFFFF00) | (data[16] & 0x000000FF)));
+      imu_msg_.angular_velocity.x =
+        raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
+      raw_data = ((((data[17] << 8) & 0xFFFFFF00) | (data[18] & 0x000000FF)));
+      imu_msg_.angular_velocity.y =
+        raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
+      raw_data = ((((data[19] << 8) & 0xFFFFFF00) | (data[20] & 0x000000FF)));
+      imu_msg_.angular_velocity.z =
+        raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
+      raw_data = ((((data[21] << 8) & 0xFFFFFF00) | (data[22] & 0x000000FF)));
+      imu_msg_.linear_acceleration.x = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
+      raw_data = ((((data[23] << 8) & 0xFFFFFF00) | (data[24] & 0x000000FF)));
+      imu_msg_.linear_acceleration.y = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
+      raw_data = ((((data[25] << 8) & 0xFFFFFF00) | (data[26] & 0x000000FF)));
+      imu_msg_.linear_acceleration.z = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
 
-    boost::asio::streambuf response;
-    boost::asio::read_until(serial_port, response, "\n");
-    std::string rbuf(
-      boost::asio::buffers_begin(response.data()), boost::asio::buffers_end(response.data()));
+      imu_status_ = ((data[13] << 8) & 0x0000FF00) | (data[14] & 0x000000FF);
 
-    length = rbuf.size();
-    size_t len = response.size();
+      pub_imu_.publish(imu_msg_);
 
-    if (length > 0) {
-      if (rbuf[5] == 'B' && rbuf[6] == 'I' && rbuf[7] == 'N' && rbuf[8] == ',' && length == 58) {
-        imu_msg.header.frame_id = imu_frame_id;
-        imu_msg.header.stamp = ros::Time::now();
+      // verify checksum
+      is_checksum_ok_ = verifyChecksum(data);
 
-        counter = ((rbuf[11] << 8) & 0x0000FF00) | (rbuf[12] & 0x000000FF);
-        raw_data = ((((rbuf[15] << 8) & 0xFFFFFF00) | (rbuf[16] & 0x000000FF)));
-        imu_msg.angular_velocity.x =
-          raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-        raw_data = ((((rbuf[17] << 8) & 0xFFFFFF00) | (rbuf[18] & 0x000000FF)));
-        imu_msg.angular_velocity.y =
-          raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-        raw_data = ((((rbuf[19] << 8) & 0xFFFFFF00) | (rbuf[20] & 0x000000FF)));
-        imu_msg.angular_velocity.z =
-          raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-        raw_data = ((((rbuf[21] << 8) & 0xFFFFFF00) | (rbuf[22] & 0x000000FF)));
-        imu_msg.linear_acceleration.x = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
-        raw_data = ((((rbuf[23] << 8) & 0xFFFFFF00) | (rbuf[24] & 0x000000FF)));
-        imu_msg.linear_acceleration.y = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
-        raw_data = ((((rbuf[25] << 8) & 0xFFFFFF00) | (rbuf[26] & 0x000000FF)));
-        imu_msg.linear_acceleration.z = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
-
-        pub.publish(imu_msg);
-
-      } else if (rbuf[5] == 'V' && rbuf[6] == 'E' && rbuf[7] == 'R' && rbuf[8] == ',') {
-        ROS_DEBUG("%s", rbuf.c_str());
-      }
+      ++receive_count_;
     }
   }
 
-  return 0;
+  receive();
+}
+
+void TagSerialDriver::onReadTimer(const asio::error_code & error)
+{
+  if (error) {
+    ROS_DEBUG("Timer canceled. Data received successfully.");
+  } else {
+    ROS_WARN("Read timeout. Retrying to connect.");
+    finalize();
+    initialize();
+  }
+}
+
+void TagSerialDriver::onWrite(const asio::error_code & error, const std::size_t bytes_transfered)
+{
+  if (error) {
+    ROS_ERROR("Write error: %s", error.message().c_str());
+  } else {
+    ROS_DEBUG("%ld bytes transfered.", bytes_transfered);
+  }
+}
+
+void TagSerialDriver::onTimer(const ros::TimerEvent & event) { updater_.force_update(); }
+
+bool TagSerialDriver::verifyChecksum(const std::string & data)
+{
+  uint8_t sum = 0;
+  uint8_t calc_sum = 0;
+  const int len = data.length();
+
+  // Ignore 1st byte '$', data after a boundary(* CH CH CR LF)
+  for (int i = 1; i < len - 5; ++i) calc_sum = calc_sum ^ data[i];
+
+  const char sum_str[3] = {data[len - 4], data[len - 3]};
+
+  try {
+    sum = std::stoi(sum_str, 0, 16);
+  } catch (std::exception & ex) {
+    return false;
+  }
+
+  return (calc_sum == sum);
 }
