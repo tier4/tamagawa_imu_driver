@@ -46,11 +46,11 @@
  * Ver 1.00 2019/6/1
  */
 
-#include "can_msgs/Frame.h"
-#include "ros/ros.h"
-#include "sensor_msgs/Imu.h"
+#include "can_msgs/msg/frame.hpp"
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/imu.hpp"
 
-ros::Publisher pub;
+rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub;
 
 uint16_t counter;
 int16_t angular_velocity_x_raw = 0;
@@ -60,13 +60,13 @@ int16_t acceleration_x_raw = 0;
 int16_t acceleration_y_raw = 0;
 int16_t acceleration_z_raw = 0;
 
-sensor_msgs::Imu imu_msg;
+sensor_msgs::msg::Imu imu_msg;
 
-void receive_CAN(const can_msgs::Frame::ConstPtr & msg)
+void receive_CAN(const can_msgs::msg::Frame::ConstSharedPtr msg)
 {
   if (msg->id == 0x319) {
     imu_msg.header.frame_id = "imu";
-    imu_msg.header.stamp = ros::Time::now();
+    imu_msg.header.stamp = rclcpp::Clock(RCL_ROS_TIME).now();
 
     counter = msg->data[1] + (msg->data[0] << 8);
     angular_velocity_x_raw = msg->data[3] + (msg->data[2] << 8);
@@ -78,7 +78,7 @@ void receive_CAN(const can_msgs::Frame::ConstPtr & msg)
     angular_velocity_z_raw = msg->data[7] + (msg->data[6] << 8);
     imu_msg.angular_velocity.z =
       angular_velocity_z_raw * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-    ROS_INFO("IMU Counter = %d", counter);
+    RCLCPP_INFO(rclcpp::get_logger("tag_can_driver"), "IMU Counter = %d", counter);
   }
   if (msg->id == 0x31A) {
     acceleration_x_raw = msg->data[3] + (msg->data[2] << 8);
@@ -92,17 +92,18 @@ void receive_CAN(const can_msgs::Frame::ConstPtr & msg)
     imu_msg.orientation.y = 0.0;
     imu_msg.orientation.z = 0.0;
     imu_msg.orientation.w = 1.0;
-    pub.publish(imu_msg);
+    pub->publish(imu_msg);
   }
 }
 
 int main(int argc, char ** argv)
 {
-  ros::init(argc, argv, "tag_serial_driver");
-  ros::NodeHandle n;
-  ros::Subscriber sub = n.subscribe("/can/imu", 100, receive_CAN);
-  pub = n.advertise<sensor_msgs::Imu>("/imu/data_raw", 100);
-  ros::spin();
+  rclcpp::init(argc, argv);
+
+  auto node = rclcpp::Node::make_shared("tag_can_driver");
+  rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr sub = node->create_subscription<can_msgs::msg::Frame>("/can/imu", 100, receive_CAN);
+  pub = node->create_publisher<sensor_msgs::msg::Imu>("/imu/data_raw", 100);
+  rclcpp::spin(node);
 
   return 0;
 }

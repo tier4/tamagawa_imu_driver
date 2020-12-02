@@ -17,9 +17,9 @@ ament_auto_add_executable(tag_serial_driver
 	src/tag_serial_driver.cpp
 )
 
-# ament_auto_add_executable(tag_can_driver
-# 	src/tag_can_driver.cpp
-# )
+ament_auto_add_executable(tag_can_driver
+	src/tag_can_driver.cpp
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
