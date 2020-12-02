@@ -53,9 +53,9 @@
 #include <termios.h>
 #include <unistd.h>
 #include <string>
-#include "ros/ros.h"
-#include "sensor_msgs/Imu.h"
-#include "std_msgs/Int32.h"
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/imu.hpp"
+#include "std_msgs/msg/int32.hpp"
 
 #include <sys/ioctl.h>
 
@@ -70,7 +70,7 @@ int fd;
 int counter;
 int raw_data;
 
-sensor_msgs::Imu imu_msg;
+sensor_msgs::msg::Imu imu_msg;
 
 int serial_setup(const char * device)
 {
@@ -92,34 +92,34 @@ int serial_setup(const char * device)
   return fd;
 }
 
-void receive_ver_req(const std_msgs::Int32::ConstPtr & msg)
+void receive_ver_req(const std_msgs::msg::Int32::ConstSharedPtr msg)
 {
   char ver_req[] = "$TSC,VER*29\x0d\x0a";
   int ver_req_data = write(fd, ver_req, sizeof(ver_req));
-  ROS_INFO("Send Version Request:%s", ver_req);
+  RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Version Request:%s", ver_req);
 }
 
-void receive_offset_cancel_req(const std_msgs::Int32::ConstPtr & msg)
+void receive_offset_cancel_req(const std_msgs::msg::Int32::ConstSharedPtr msg)
 {
   char offset_cancel_req[32];
   sprintf(offset_cancel_req, "$TSC,OFC,%d\x0d\x0a", msg->data);
   int offset_cancel_req_data = write(fd, offset_cancel_req, sizeof(offset_cancel_req));
-  ROS_INFO("Send Offset Cancel Request:%s", offset_cancel_req);
+  RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Offset Cancel Request:%s", offset_cancel_req);
 }
 
-void receive_heading_reset_req(const std_msgs::Int32::ConstPtr & msg)
+void receive_heading_reset_req(const std_msgs::msg::Int32::ConstSharedPtr msg)
 {
   char heading_reset_req[] = "$TSC,HRST*29\x0d\x0a";
   int heading_reset_req_data = write(fd, heading_reset_req, sizeof(heading_reset_req));
-  ROS_INFO("Send Heading reset Request:%s", heading_reset_req);
+  RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Heading reset Request:%s", heading_reset_req);
 }
 
 void shutdown_cmd(int sig)
 {
   tcsetattr(fd, TCSANOW, &old_conf_tio);  // Revert to previous settings
   close(fd);
-  ROS_INFO("Port closed");
-  ros::shutdown();
+  RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Port closed");
+  rclcpp::shutdown();
 }
 
 #include <boost/asio.hpp>
@@ -127,19 +127,18 @@ using namespace boost::asio;
 
 int main(int argc, char ** argv)
 {
-  ros::init(argc, argv, "tag_serial_driver", ros::init_options::NoSigintHandler);
-  ros::NodeHandle n;
-  ros::Publisher pub = n.advertise<sensor_msgs::Imu>("imu/data_raw", 1000);
-  ros::Subscriber sub1 = n.subscribe("receive_ver_req", 10, receive_ver_req);
-  ros::Subscriber sub2 = n.subscribe("receive_offset_cancel_req", 10, receive_offset_cancel_req);
-  ros::Subscriber sub3 = n.subscribe("receive_heading_reset_req", 10, receive_heading_reset_req);
+  auto init_options = rclcpp::InitOptions();
+  init_options.shutdown_on_sigint = false;
+  rclcpp::init(argc, argv, init_options);
+  auto node = rclcpp::Node::make_shared("tag_serial_driver");
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 1000);
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub1 = node->create_subscription<std_msgs::msg::Int32>("receive_ver_req", 10, receive_ver_req);
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub2 = node->create_subscription<std_msgs::msg::Int32>("receive_offset_cancel_req", 10, receive_offset_cancel_req);
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub3 = node->create_subscription<std_msgs::msg::Int32>("receive_heading_reset_req", 10, receive_heading_reset_req);
+  
+  std::string imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
 
-  ros::NodeHandle nh("~");
-  std::string imu_frame_id = "imu";
-  nh.getParam("imu_frame_id", imu_frame_id);
-
-  std::string port = "/dev/ttyUSB0";
-  nh.getParam("port", port);
+  std::string port = node->declare_parameter<std::string>("port", "/dev/ttyUSB0");
 
   io_service io;
   serial_port serial_port(io, port.c_str());
@@ -153,15 +152,15 @@ int main(int argc, char ** argv)
   std::size_t length;
   serial_port.write_some(buffer(wbuf));
 
-  ros::Rate loop_rate(30);
+  rclcpp::Rate loop_rate(30.0);
 
   imu_msg.orientation.x = 0.0;
   imu_msg.orientation.y = 0.0;
   imu_msg.orientation.z = 0.0;
   imu_msg.orientation.w = 1.0;
 
-  while (ros::ok()) {
-    ros::spinOnce();
+  while (rclcpp::ok()) {
+    rclcpp::spin_some(node);
 
     boost::asio::streambuf response;
     boost::asio::read_until(serial_port, response, "\n");
@@ -174,7 +173,7 @@ int main(int argc, char ** argv)
     if (length > 0) {
       if (rbuf[5] == 'B' && rbuf[6] == 'I' && rbuf[7] == 'N' && rbuf[8] == ',' && length == 58) {
         imu_msg.header.frame_id = imu_frame_id;
-        imu_msg.header.stamp = ros::Time::now();
+        imu_msg.header.stamp = node->now();
 
         counter = ((rbuf[11] << 8) & 0x0000FF00) | (rbuf[12] & 0x000000FF);
         raw_data = ((((rbuf[15] << 8) & 0xFFFFFF00) | (rbuf[16] & 0x000000FF)));
@@ -193,10 +192,10 @@ int main(int argc, char ** argv)
         raw_data = ((((rbuf[25] << 8) & 0xFFFFFF00) | (rbuf[26] & 0x000000FF)));
         imu_msg.linear_acceleration.z = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
 
-        pub.publish(imu_msg);
+        pub->publish(imu_msg);
 
       } else if (rbuf[5] == 'V' && rbuf[6] == 'E' && rbuf[7] == 'R' && rbuf[8] == ',') {
-        ROS_DEBUG("%s", rbuf.c_str());
+        RCLCPP_DEBUG(rclcpp::get_logger("tag_serial_driver"), "%s", rbuf.c_str());
       }
     }
   }
