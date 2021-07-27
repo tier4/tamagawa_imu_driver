@@ -95,7 +95,6 @@ int serial_setup(const char * device)
 void receive_ver_req(const std_msgs::msg::Int32::ConstSharedPtr msg)
 {
   char ver_req[] = "$TSC,VER*29\x0d\x0a";
-  int ver_req_data = write(fd, ver_req, sizeof(ver_req));
   RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Version Request:%s", ver_req);
 }
 
@@ -103,14 +102,12 @@ void receive_offset_cancel_req(const std_msgs::msg::Int32::ConstSharedPtr msg)
 {
   char offset_cancel_req[32];
   sprintf(offset_cancel_req, "$TSC,OFC,%d\x0d\x0a", msg->data);
-  int offset_cancel_req_data = write(fd, offset_cancel_req, sizeof(offset_cancel_req));
   RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Offset Cancel Request:%s", offset_cancel_req);
 }
 
 void receive_heading_reset_req(const std_msgs::msg::Int32::ConstSharedPtr msg)
 {
   char heading_reset_req[] = "$TSC,HRST*29\x0d\x0a";
-  int heading_reset_req_data = write(fd, heading_reset_req, sizeof(heading_reset_req));
   RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Heading reset Request:%s", heading_reset_req);
 }
 
@@ -168,7 +165,6 @@ int main(int argc, char ** argv)
       boost::asio::buffers_begin(response.data()), boost::asio::buffers_end(response.data()));
 
     length = rbuf.size();
-    size_t len = response.size();
 
     if (length > 0) {
       if (rbuf[5] == 'B' && rbuf[6] == 'I' && rbuf[7] == 'N' && rbuf[8] == ',' && length == 58) {
