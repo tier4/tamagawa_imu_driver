@@ -132,7 +132,7 @@ int main(int argc, char ** argv)
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub1 = node->create_subscription<std_msgs::msg::Int32>("receive_ver_req", 10, receive_ver_req);
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub2 = node->create_subscription<std_msgs::msg::Int32>("receive_offset_cancel_req", 10, receive_offset_cancel_req);
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub3 = node->create_subscription<std_msgs::msg::Int32>("receive_heading_reset_req", 10, receive_heading_reset_req);
-  
+
   std::string imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
 
   std::string port = node->declare_parameter<std::string>("port", "/dev/ttyUSB0");
