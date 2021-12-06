@@ -61,11 +61,12 @@ int16_t acceleration_y_raw = 0;
 int16_t acceleration_z_raw = 0;
 
 sensor_msgs::msg::Imu imu_msg;
+std::string imu_frame_id;
 
 void receive_CAN(const can_msgs::msg::Frame::ConstSharedPtr msg)
 {
   if (msg->id == 0x319) {
-    imu_msg.header.frame_id = "imu";
+    imu_msg.header.frame_id = imu_frame_id;
     imu_msg.header.stamp = rclcpp::Clock(RCL_ROS_TIME).now();
 
     counter = msg->data[1] + (msg->data[0] << 8);
@@ -101,6 +102,7 @@ int main(int argc, char ** argv)
   rclcpp::init(argc, argv);
 
   auto node = rclcpp::Node::make_shared("tag_can_driver");
+  imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
   rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr sub = node->create_subscription<can_msgs::msg::Frame>("/can/imu", 100, receive_CAN);
   pub = node->create_publisher<sensor_msgs::msg::Imu>("/imu/data_raw", 100);
   rclcpp::spin(node);
