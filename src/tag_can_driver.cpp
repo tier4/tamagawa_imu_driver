@@ -79,7 +79,6 @@ void receive_CAN(const can_msgs::msg::Frame::ConstSharedPtr msg)
     angular_velocity_z_raw = msg->data[7] + (msg->data[6] << 8);
     imu_msg.angular_velocity.z =
       angular_velocity_z_raw * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-    RCLCPP_INFO(rclcpp::get_logger("tag_can_driver"), "IMU Counter = %d", counter);
   }
   if (msg->id == 0x31A) {
     acceleration_x_raw = msg->data[3] + (msg->data[2] << 8);
