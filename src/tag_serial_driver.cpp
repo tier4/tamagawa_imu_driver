@@ -97,7 +97,7 @@ void receive_ver_req([[maybe_unused]] const std_msgs::msg::Int32::ConstSharedPtr
   char ver_req[] = "$TSC,VER*29\x0d\x0a";
   int ver_req_data = write(fd, ver_req, sizeof(ver_req));
   if (ver_req_data >= 0) {
-    RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Version Request:%s", ver_req);
+    RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Version Request: %s", ver_req);
   } else {
     RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "ERROR! Send Version Request: %s", ver_req);
   }
@@ -109,7 +109,7 @@ void receive_offset_cancel_req(const std_msgs::msg::Int32::ConstSharedPtr msg)
   sprintf(offset_cancel_req, "$TSC,OFC,%d\x0d\x0a", msg->data);
   int offset_cancel_req_data = write(fd, offset_cancel_req, sizeof(offset_cancel_req));
   if (offset_cancel_req_data >= 0) {
-    RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Offset Cancel Request:%s", offset_cancel_req);
+    RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Offset Cancel Request: %s", offset_cancel_req);
   } else {
     RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "ERROR! Send Offset Cancel Request: %s", offset_cancel_req);
   }
@@ -121,7 +121,7 @@ void receive_heading_reset_req([[maybe_unused]] const std_msgs::msg::Int32::Cons
   char heading_reset_req[] = "$TSC,HRST*29\x0d\x0a";
   int heading_reset_req_data = write(fd, heading_reset_req, sizeof(heading_reset_req));
   if (heading_reset_req_data >= 0) {
-    RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Heading reset Request:%s", heading_reset_req);
+    RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Heading reset Request: %s", heading_reset_req);
   } else {
     RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "ERROR! Send Heading reset Request: %s", heading_reset_req);
   }
