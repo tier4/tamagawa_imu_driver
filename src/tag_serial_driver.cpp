@@ -92,7 +92,7 @@ int serial_setup(const char * device)
   return fd;
 }
 
-void receive_ver_req(const std_msgs::msg::Int32::ConstSharedPtr msg)
+void receive_ver_req([[maybe_unused]] const std_msgs::msg::Int32::ConstSharedPtr msg)
 {
   char ver_req[] = "$TSC,VER*29\x0d\x0a";
   [[maybe_unused]] int ver_req_data = write(fd, ver_req, sizeof(ver_req));
@@ -107,14 +107,14 @@ void receive_offset_cancel_req(const std_msgs::msg::Int32::ConstSharedPtr msg)
   RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Offset Cancel Request:%s", offset_cancel_req);
 }
 
-void receive_heading_reset_req(const std_msgs::msg::Int32::ConstSharedPtr msg)
+void receive_heading_reset_req([[maybe_unused]] const std_msgs::msg::Int32::ConstSharedPtr msg)
 {
   char heading_reset_req[] = "$TSC,HRST*29\x0d\x0a";
   [[maybe_unused]] int heading_reset_req_data = write(fd, heading_reset_req, sizeof(heading_reset_req));
   RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Heading reset Request:%s", heading_reset_req);
 }
 
-void shutdown_cmd(int sig)
+void shutdown_cmd([[maybe_unused]] int sig)
 {
   tcsetattr(fd, TCSANOW, &old_conf_tio);  // Revert to previous settings
   close(fd);
