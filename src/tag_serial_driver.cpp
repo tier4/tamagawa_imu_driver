@@ -140,9 +140,7 @@ using namespace boost::asio;
 
 int main(int argc, char ** argv)
 {
-  auto init_options = rclcpp::InitOptions();
-  init_options.shutdown_on_sigint = false;
-  rclcpp::init(argc, argv, init_options);
+  rclcpp::init(argc, argv);
   auto node = rclcpp::Node::make_shared("tag_serial_driver");
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 1000);
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub1 = node->create_subscription<std_msgs::msg::Int32>("receive_ver_req", 10, receive_ver_req);
