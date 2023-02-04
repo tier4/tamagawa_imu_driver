@@ -99,7 +99,9 @@ void receive_ver_req([[maybe_unused]] const std_msgs::msg::Int32::ConstSharedPtr
   if (ver_req_data >= 0) {
     RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Version Request: %s", ver_req);
   } else {
-    RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "ERROR! Send Version Request: %s", ver_req);
+    RCLCPP_ERROR(
+      rclcpp::get_logger("tag_serial_driver"), "ERROR! Send Version Request: %s",
+      ver_req);
   }
 }
 
@@ -109,9 +111,13 @@ void receive_offset_cancel_req(const std_msgs::msg::Int32::ConstSharedPtr msg)
   sprintf(offset_cancel_req, "$TSC,OFC,%d\x0d\x0a", msg->data);
   int offset_cancel_req_data = write(fd, offset_cancel_req, sizeof(offset_cancel_req));
   if (offset_cancel_req_data >= 0) {
-    RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Offset Cancel Request: %s", offset_cancel_req);
+    RCLCPP_INFO(
+      rclcpp::get_logger(
+        "tag_serial_driver"), "Send Offset Cancel Request: %s", offset_cancel_req);
   } else {
-    RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "ERROR! Send Offset Cancel Request: %s", offset_cancel_req);
+    RCLCPP_ERROR(
+      rclcpp::get_logger(
+        "tag_serial_driver"), "ERROR! Send Offset Cancel Request: %s", offset_cancel_req);
   }
 
 }
@@ -121,9 +127,13 @@ void receive_heading_reset_req([[maybe_unused]] const std_msgs::msg::Int32::Cons
   char heading_reset_req[] = "$TSC,HRST*29\x0d\x0a";
   int heading_reset_req_data = write(fd, heading_reset_req, sizeof(heading_reset_req));
   if (heading_reset_req_data >= 0) {
-    RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Heading reset Request: %s", heading_reset_req);
+    RCLCPP_INFO(
+      rclcpp::get_logger(
+        "tag_serial_driver"), "Send Heading reset Request: %s", heading_reset_req);
   } else {
-    RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "ERROR! Send Heading reset Request: %s", heading_reset_req);
+    RCLCPP_ERROR(
+      rclcpp::get_logger(
+        "tag_serial_driver"), "ERROR! Send Heading reset Request: %s", heading_reset_req);
   }
 }
 
@@ -142,10 +152,18 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = rclcpp::Node::make_shared("tag_serial_driver");
-  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 1000);
-  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub1 = node->create_subscription<std_msgs::msg::Int32>("receive_ver_req", 10, receive_ver_req);
-  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub2 = node->create_subscription<std_msgs::msg::Int32>("receive_offset_cancel_req", 10, receive_offset_cancel_req);
-  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub3 = node->create_subscription<std_msgs::msg::Int32>("receive_heading_reset_req", 10, receive_heading_reset_req);
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub =
+    node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 1000);
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub1 =
+    node->create_subscription<std_msgs::msg::Int32>("receive_ver_req", 10, receive_ver_req);
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub2 =
+    node->create_subscription<std_msgs::msg::Int32>(
+    "receive_offset_cancel_req", 10,
+    receive_offset_cancel_req);
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub3 =
+    node->create_subscription<std_msgs::msg::Int32>(
+    "receive_heading_reset_req", 10,
+    receive_heading_reset_req);
 
   std::string imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
 
