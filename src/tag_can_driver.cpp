@@ -52,10 +52,10 @@
 
 rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub;
 
-uint16_t counter;
-int16_t angular_velocity_x_raw = 0;
-int16_t angular_velocity_y_raw = 0;
-int16_t angular_velocity_z_raw = 0;
+static unsigned int counter;
+static int16_t raw_data;
+static int32_t raw_data2;
+static bool use_fog;
 int16_t acceleration_x_raw = 0;
 int16_t acceleration_y_raw = 0;
 int16_t acceleration_z_raw = 0;
@@ -67,18 +67,33 @@ void receive_CAN(const can_msgs::msg::Frame::ConstSharedPtr msg)
 {
   if (msg->id == 0x319) {
     imu_msg.header.frame_id = imu_frame_id;
-    imu_msg.header.stamp = rclcpp::Clock(RCL_ROS_TIME).now();
+    imu_msg.header.stamp = msg->header.stamp;
 
-    counter = msg->data[1] + (msg->data[0] << 8);
-    angular_velocity_x_raw = msg->data[3] + (msg->data[2] << 8);
-    imu_msg.angular_velocity.x =
-      angular_velocity_x_raw * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-    angular_velocity_y_raw = msg->data[5] + (msg->data[4] << 8);
-    imu_msg.angular_velocity.y =
-      angular_velocity_y_raw * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
-    angular_velocity_z_raw = msg->data[7] + (msg->data[6] << 8);
-    imu_msg.angular_velocity.z =
-      angular_velocity_z_raw * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
+    if (use_fog)
+    {
+      raw_data = msg->data[1] + (msg->data[0] << 8);
+      imu_msg.angular_velocity.x =
+          raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
+      raw_data = msg->data[3] + (msg->data[2] << 8);
+      imu_msg.angular_velocity.y =
+          raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
+      raw_data2 = (msg->data[7] + (msg->data[6] << 8)) + ((msg->data[5] << 16) + (msg->data[4] << 24));
+      imu_msg.angular_velocity.z =
+          raw_data2 * (200 / pow(2, 31)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
+    }
+    else
+    {
+      counter = msg->data[1] + (msg->data[0] << 8);
+      raw_data = msg->data[3] + (msg->data[2] << 8);
+      imu_msg.angular_velocity.x =
+          raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
+      raw_data = msg->data[5] + (msg->data[4] << 8);
+      imu_msg.angular_velocity.y =
+          raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
+      raw_data = msg->data[7] + (msg->data[6] << 8);
+      imu_msg.angular_velocity.z =
+        raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
+    }
   }
   if (msg->id == 0x31A) {
     acceleration_x_raw = msg->data[3] + (msg->data[2] << 8);
@@ -101,6 +116,7 @@ int main(int argc, char ** argv)
   rclcpp::init(argc, argv);
 
   auto node = rclcpp::Node::make_shared("tag_can_driver");
+  use_fog = node->declare_parameter<bool>("use_fog", "false");
   imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
   rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr sub = node->create_subscription<can_msgs::msg::Frame>("/can/imu", 100, receive_CAN);
   pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 100);
