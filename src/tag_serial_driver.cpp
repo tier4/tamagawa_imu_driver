@@ -56,8 +56,10 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "std_msgs/msg/int32.hpp"
+#include "rate_bound_status.hpp"
 
 #include <sys/ioctl.h>
+#include <memory>
 
 std::string device = "/dev/ttyUSB0";
 std::string imu_type = "noGPS";
@@ -71,6 +73,9 @@ int counter;
 int raw_data;
 
 sensor_msgs::msg::Imu imu_msg;
+std::unique_ptr<custom_diagnostic_tasks::RateBoundStatus> rate_bound_status;
+std::unique_ptr<diagnostic_updater::Updater> diag_updater;
+std::unique_ptr<diagnostic_updater::CompositeDiagnosticTask> diag_composer;
 
 int serial_setup(const char * device)
 {
@@ -170,6 +175,20 @@ int main(int argc, char ** argv)
   imu_msg.orientation.z = 0.0;
   imu_msg.orientation.w = 1.0;
 
+  auto target_frequency = node->declare_parameter<double>("target_frequency", 200.0);
+  rate_bound_status = std::make_unique<custom_diagnostic_tasks::RateBoundStatus>(
+    custom_diagnostic_tasks::RateBoundStatusParam(target_frequency * 0.95, target_frequency * 1.05),
+    custom_diagnostic_tasks::RateBoundStatusParam(target_frequency * 0.90, target_frequency * 1.10),
+    3
+  );
+  diag_updater = std::make_unique<diagnostic_updater::Updater>(node);
+  diag_updater->setHardwareID(imu_frame_id);
+  diag_composer = std::make_unique<diagnostic_updater::CompositeDiagnosticTask>(imu_frame_id);
+  diag_composer->addTask(&(*rate_bound_status));
+  diag_updater->setPeriod(1.0 / target_frequency);
+  diag_updater->add(*diag_composer);
+  diag_updater->force_update();
+
   while (rclcpp::ok()) {
     rclcpp::spin_some(node);
 
@@ -203,6 +222,7 @@ int main(int argc, char ** argv)
         imu_msg.linear_acceleration.z = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
 
         pub->publish(imu_msg);
+        rate_bound_status->tick();
 
       } else if (rbuf[5] == 'V' && rbuf[6] == 'E' && rbuf[7] == 'R' && rbuf[8] == ',') {
         RCLCPP_DEBUG(rclcpp::get_logger("tag_serial_driver"), "%s", rbuf.c_str());

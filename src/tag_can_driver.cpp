@@ -50,7 +50,13 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 
+#include "rate_bound_status.hpp"
+#include <memory>
+
 rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub;
+std::unique_ptr<custom_diagnostic_tasks::RateBoundStatus> rate_bound_status;
+std::unique_ptr<diagnostic_updater::Updater> diag_updater;
+std::unique_ptr<diagnostic_updater::CompositeDiagnosticTask> diag_composer;
 
 uint16_t counter;
 int16_t angular_velocity_x_raw = 0;
@@ -93,6 +99,7 @@ void receive_CAN(const can_msgs::msg::Frame::ConstSharedPtr msg)
     imu_msg.orientation.z = 0.0;
     imu_msg.orientation.w = 1.0;
     pub->publish(imu_msg);
+    rate_bound_status->tick();
   }
 }
 
@@ -102,6 +109,19 @@ int main(int argc, char ** argv)
 
   auto node = rclcpp::Node::make_shared("tag_can_driver");
   imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
+  auto target_frequency = node->declare_parameter<double>("target_frequency", 200.0);
+  rate_bound_status = std::make_unique<custom_diagnostic_tasks::RateBoundStatus>(
+    custom_diagnostic_tasks::RateBoundStatusParam(target_frequency * 0.95, target_frequency * 1.05),
+    custom_diagnostic_tasks::RateBoundStatusParam(target_frequency * 0.90, target_frequency * 1.10),
+    3
+  );
+  diag_updater = std::make_unique<diagnostic_updater::Updater>(node);
+  diag_updater->setHardwareID(imu_frame_id);
+  diag_composer = std::make_unique<diagnostic_updater::CompositeDiagnosticTask>(imu_frame_id);
+  diag_composer->addTask(&(*rate_bound_status));
+  diag_updater->setPeriod(1.0 / target_frequency);
+  diag_updater->add(*diag_composer);
+  diag_updater->force_update();
   rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr sub = node->create_subscription<can_msgs::msg::Frame>("/can/imu", 100, receive_CAN);
   pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 100);
   rclcpp::spin(node);
