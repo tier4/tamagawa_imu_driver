@@ -109,18 +109,27 @@ int main(int argc, char ** argv)
 
   auto node = rclcpp::Node::make_shared("tag_can_driver");
   imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
-  auto target_frequency = node->declare_parameter<double>("target_frequency", 200.0);
+  auto frequency_reference = node->declare_parameter<double>("frequency_reference", 200.0);
+  auto rel_ok_min_freq = node->declare_parameter<double>(
+    "diagnostics.rate_bound_status.relative_frequency_ok.min", 0.95);
+  auto rel_ok_max_freq = node->declare_parameter<double>(
+    "diagnostics.rate_bound_status.relative_frequency_ok.max", 1.05);
+  auto rel_warn_min_freq = node->declare_parameter<double>(
+    "diagnostics.rate_bound_status.relative_frequency_warn.min", 0.9);
+  auto rel_warn_max_freq = node->declare_parameter<double>(
+    "diagnostics.rate_bound_status.relative_frequency_warn.max", 1.1);
   rate_bound_status = std::make_unique<custom_diagnostic_tasks::RateBoundStatus>(
     node.get(),
-    custom_diagnostic_tasks::RateBoundStatusParam(target_frequency * 0.95, target_frequency * 1.05),
-    custom_diagnostic_tasks::RateBoundStatusParam(target_frequency * 0.90, target_frequency * 1.10),
-    3
-  );
+    custom_diagnostic_tasks::RateBoundStatusParam(
+      frequency_reference * rel_ok_min_freq, frequency_reference * rel_ok_max_freq),
+    custom_diagnostic_tasks::RateBoundStatusParam(
+      frequency_reference * rel_warn_min_freq, frequency_reference * rel_warn_max_freq),
+    3);
   diag_updater = std::make_unique<diagnostic_updater::Updater>(node);
   diag_updater->setHardwareID(imu_frame_id);
   diag_composer = std::make_unique<diagnostic_updater::CompositeDiagnosticTask>(imu_frame_id);
   diag_composer->addTask(&(*rate_bound_status));
-  diag_updater->setPeriod(1.0 / target_frequency);
+  diag_updater->setPeriod(1.0 / frequency_reference);
   diag_updater->add(*diag_composer);
   diag_updater->force_update();
   rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr sub = node->create_subscription<can_msgs::msg::Frame>("/can/imu", 100, receive_CAN);
