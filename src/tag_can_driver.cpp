@@ -111,6 +111,7 @@ int main(int argc, char ** argv)
   imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
   auto target_frequency = node->declare_parameter<double>("target_frequency", 200.0);
   rate_bound_status = std::make_unique<custom_diagnostic_tasks::RateBoundStatus>(
+    node.get(),
     custom_diagnostic_tasks::RateBoundStatusParam(target_frequency * 0.95, target_frequency * 1.05),
     custom_diagnostic_tasks::RateBoundStatusParam(target_frequency * 0.90, target_frequency * 1.10),
     3
