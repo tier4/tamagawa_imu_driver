@@ -110,21 +110,17 @@ int main(int argc, char ** argv)
   auto node = rclcpp::Node::make_shared("tag_can_driver");
   imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
   auto frequency_reference = node->declare_parameter<double>("frequency_reference", 200.0);
-  auto rel_ok_min_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.relative_frequency_ok.min", 0.95);
-  auto rel_ok_max_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.relative_frequency_ok.max", 1.05);
-  auto rel_warn_min_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.relative_frequency_warn.min", 0.9);
-  auto rel_warn_max_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.relative_frequency_warn.max", 1.1);
+  auto ok_min_freq = node->declare_parameter<double>(
+    "diagnostics.rate_bound_status.frequency_ok.min", 190);
+  auto ok_max_freq = node->declare_parameter<double>(
+    "diagnostics.rate_bound_status.frequency_ok.max", 210);
+  auto warn_min_freq = node->declare_parameter<double>(
+    "diagnostics.rate_bound_status.frequency_warn.min", 180);
+  auto warn_max_freq = node->declare_parameter<double>(
+    "diagnostics.rate_bound_status.frequency_warn.max", 220);
   rate_bound_status = std::make_unique<custom_diagnostic_tasks::RateBoundStatus>(
-    node.get(),
-    custom_diagnostic_tasks::RateBoundStatusParam(
-      frequency_reference * rel_ok_min_freq, frequency_reference * rel_ok_max_freq),
-    custom_diagnostic_tasks::RateBoundStatusParam(
-      frequency_reference * rel_warn_min_freq, frequency_reference * rel_warn_max_freq),
-    3);
+    node.get(), custom_diagnostic_tasks::RateBoundStatusParam(ok_min_freq, ok_max_freq),
+    custom_diagnostic_tasks::RateBoundStatusParam(warn_min_freq, warn_max_freq), 3);
   diag_updater = std::make_unique<diagnostic_updater::Updater>(node);
   diag_updater->setHardwareID(imu_frame_id);
   diag_composer = std::make_unique<diagnostic_updater::CompositeDiagnosticTask>(imu_frame_id);
