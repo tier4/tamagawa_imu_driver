@@ -111,13 +111,13 @@ int main(int argc, char ** argv)
   imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
   auto frequency_reference = node->declare_parameter<double>("frequency_reference", 200.0);
   auto ok_min_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.frequency_ok.min", 190);
+    "diagnostics.rate_bound_status.frequency_ok.min_hz", 190.0);
   auto ok_max_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.frequency_ok.max", 210);
+    "diagnostics.rate_bound_status.frequency_ok.max_hz", 210.0);
   auto warn_min_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.frequency_warn.min", 180);
+    "diagnostics.rate_bound_status.frequency_warn.min_hz", 180.0);
   auto warn_max_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.frequency_warn.max", 220);
+    "diagnostics.rate_bound_status.frequency_warn.max_hz", 220.0);
   rate_bound_status = std::make_unique<custom_diagnostic_tasks::RateBoundStatus>(
     node.get(), custom_diagnostic_tasks::RateBoundStatusParam(ok_min_freq, ok_max_freq),
     custom_diagnostic_tasks::RateBoundStatusParam(warn_min_freq, warn_max_freq), 3);
