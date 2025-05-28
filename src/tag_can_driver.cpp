@@ -124,7 +124,7 @@ int main(int argc, char ** argv)
   diag_updater = std::make_unique<diagnostic_updater::Updater>(node);
   diag_updater->setHardwareID(imu_frame_id);
   diag_composer = std::make_unique<diagnostic_updater::CompositeDiagnosticTask>(imu_frame_id);
-  diag_composer->addTask(&(*rate_bound_status));
+  diag_composer->addTask(rate_bound_status.get());
   diag_updater->setPeriod(1.0 / frequency_reference);
   diag_updater->add(*diag_composer);
   diag_updater->force_update();
