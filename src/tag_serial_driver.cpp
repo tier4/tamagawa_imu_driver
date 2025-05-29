@@ -75,7 +75,6 @@ int raw_data;
 sensor_msgs::msg::Imu imu_msg;
 std::unique_ptr<custom_diagnostic_tasks::RateBoundStatus> rate_bound_status;
 std::unique_ptr<diagnostic_updater::Updater> diag_updater;
-std::unique_ptr<diagnostic_updater::CompositeDiagnosticTask> diag_composer;
 
 int serial_setup(const char * device)
 {
@@ -184,15 +183,14 @@ int main(int argc, char ** argv)
     "diagnostics.rate_bound_status.frequency_warn.min_hz", 180.0);
   auto warn_max_freq = node->declare_parameter<double>(
     "diagnostics.rate_bound_status.frequency_warn.max_hz", 220.0);
+  node->declare_parameter<bool>("diagnostic_updater.use_fqn", true);  // read by diagnostic updater
   rate_bound_status = std::make_unique<custom_diagnostic_tasks::RateBoundStatus>(
     node.get(), custom_diagnostic_tasks::RateBoundStatusParam(ok_min_freq, ok_max_freq),
     custom_diagnostic_tasks::RateBoundStatusParam(warn_min_freq, warn_max_freq), 3);
   diag_updater = std::make_unique<diagnostic_updater::Updater>(node);
   diag_updater->setHardwareID(imu_frame_id);
-  diag_composer = std::make_unique<diagnostic_updater::CompositeDiagnosticTask>(imu_frame_id);
-  diag_composer->addTask(rate_bound_status.get());
   diag_updater->setPeriod(1.0 / frequency_reference);
-  diag_updater->add(*diag_composer);
+  diag_updater->add(*rate_bound_status);
   diag_updater->force_update();
 
   while (rclcpp::ok()) {
