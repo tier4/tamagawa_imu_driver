@@ -176,17 +176,17 @@ int main(int argc, char ** argv)
 
   auto frequency_reference = node->declare_parameter<double>("frequency_reference", 200.0);
   auto ok_min_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.frequency_ok.min_hz", 190.0);
+    "diagnostics.rate_bound_status.frequency_ok.min_hz", 195.0);
   auto ok_max_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.frequency_ok.max_hz", 210.0);
+    "diagnostics.rate_bound_status.frequency_ok.max_hz", 205.0);
   auto warn_min_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.frequency_warn.min_hz", 180.0);
+    "diagnostics.rate_bound_status.frequency_warn.min_hz", 190.0);
   auto warn_max_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.frequency_warn.max_hz", 220.0);
+    "diagnostics.rate_bound_status.frequency_warn.max_hz", 210.0);
   node->declare_parameter<bool>("diagnostic_updater.use_fqn", true);  // read by diagnostic updater
   rate_bound_status = std::make_unique<custom_diagnostic_tasks::RateBoundStatus>(
     node.get(), custom_diagnostic_tasks::RateBoundStatusParam(ok_min_freq, ok_max_freq),
-    custom_diagnostic_tasks::RateBoundStatusParam(warn_min_freq, warn_max_freq), 3);
+    custom_diagnostic_tasks::RateBoundStatusParam(warn_min_freq, warn_max_freq), 3, false);
   diag_updater = std::make_unique<diagnostic_updater::Updater>(node);
   diag_updater->setHardwareID(imu_frame_id);
   diag_updater->setPeriod(1.0 / frequency_reference);
