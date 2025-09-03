@@ -108,7 +108,7 @@ int main(int argc, char ** argv)
 
   auto node = rclcpp::Node::make_shared("tag_can_driver");
   imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
-  auto frequency_reference = node->declare_parameter<double>("frequency_reference", 200.0);
+  auto frequency_reference = node->declare_parameter<double>("frequency_reference", 10.0);
   auto ok_min_freq = node->declare_parameter<double>(
     "diagnostics.rate_bound_status.frequency_ok.min_hz", 100.0);
   auto ok_max_freq = node->declare_parameter<double>(
