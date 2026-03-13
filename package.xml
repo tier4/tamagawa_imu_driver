@@ -16,6 +16,7 @@
 
   <buildtool_depend>ament_cmake_auto</buildtool_depend>
 
+  <depend condition="$ENABLE_AGNOCAST == 1">agnocastlib</depend>
   <depend>diagnostic_updater</depend>
   <depend>libboost-dev</depend>
   <depend>rclcpp</depend>

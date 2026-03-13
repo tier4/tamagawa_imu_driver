@@ -53,6 +53,10 @@
 #include "rate_bound_status.hpp"
 #include <memory>
 
+#ifdef USE_AGNOCAST_ENABLED
+#include <agnocast/agnocast_callback_isolated_executor.hpp>
+#endif
+
 rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub;
 std::unique_ptr<custom_diagnostic_tasks::RateBoundStatus> rate_bound_status;
 std::unique_ptr<diagnostic_updater::Updater> diag_updater;
@@ -128,7 +132,14 @@ int main(int argc, char ** argv)
   diag_updater->force_update();
   rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr sub = node->create_subscription<can_msgs::msg::Frame>("/can/imu", 100, receive_CAN);
   pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 100);
+
+#ifdef USE_AGNOCAST_ENABLED
+  auto executor = std::make_shared<agnocast::CallbackIsolatedAgnocastExecutor>();
+  executor->add_node(node);
+  executor->spin();
+#else
   rclcpp::spin(node);
+#endif
 
   return 0;
 }

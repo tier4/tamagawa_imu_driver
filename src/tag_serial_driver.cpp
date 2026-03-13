@@ -61,9 +61,16 @@
 #include <sys/ioctl.h>
 #include <memory>
 
+<<<<<<< Updated upstream
 std::string device = "/dev/ttyUSB0";
 std::string imu_type = "noGPS";
 std::string rate = "50";
+=======
+#ifdef USE_AGNOCAST_ENABLED
+#include <agnocast/agnocast_callback_isolated_executor.hpp>
+#endif
+
+>>>>>>> Stashed changes
 
 struct termios old_conf_tio;
 struct termios conf_tio;
@@ -225,8 +232,18 @@ int main(int argc, char ** argv)
         raw_data = ((((rbuf[25] << 8) & 0xFFFFFF00) | (rbuf[26] & 0x000000FF)));
         imu_msg.linear_acceleration.z = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
 
+<<<<<<< Updated upstream
         pub->publish(imu_msg);
         rate_bound_status->tick();
+=======
+#ifdef USE_AGNOCAST_ENABLED
+  auto executor = std::make_shared<agnocast::CallbackIsolatedAgnocastExecutor>();
+  executor->add_node(node);
+  executor->spin();
+#else
+  rclcpp::spin(node);
+#endif
+>>>>>>> Stashed changes
 
       } else if (rbuf[5] == 'V' && rbuf[6] == 'E' && rbuf[7] == 'R' && rbuf[8] == ',') {
         RCLCPP_DEBUG(rclcpp::get_logger("tag_serial_driver"), "%s", rbuf.c_str());
