@@ -74,8 +74,7 @@ void loop_process(
   rclcpp::Node::SharedPtr node,
   boost::asio::serial_port &serial_port,
   std::string imu_frame_id,
-  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub,
-  std::shared_ptr<custom_diagnostic_tasks::RateBoundStatus> rate_bound_status
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub
 )
 {
   std::size_t length;
@@ -157,8 +156,6 @@ int main(int argc, char ** argv)
   std::string wbuf = "$TSC,BIN,30\x0d\x0a";
   serial_port.write_some(buffer(wbuf));
 
-  rclcpp::Rate loop_rate(30.0);
-
   auto frequency_reference = node->declare_parameter<double>("frequency_reference", 200.0);
   auto ok_min_freq = node->declare_parameter<double>(
     "diagnostics.rate_bound_status.frequency_ok.min_hz", 100.0);
@@ -177,7 +174,7 @@ int main(int argc, char ** argv)
   diag_updater->setPeriod(1.0 / frequency_reference);
   diag_updater->add(*rate_bound_status);
 
-  std::thread loop_thread(loop_process, node, std::ref(serial_port), imu_frame_id, pub, rate_bound_status);
+  std::thread loop_thread(loop_process, node, std::ref(serial_port), imu_frame_id, pub);
 
   rclcpp::spin(node);
 
