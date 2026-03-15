@@ -49,8 +49,10 @@
 #include <cmath>
 #include <string>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <atomic>
+#include <iostream>
 
 #include <boost/asio.hpp>
 
@@ -65,15 +67,29 @@ using namespace boost::asio;
 
 
 std::shared_ptr<custom_diagnostic_tasks::RateBoundStatus> rate_bound_status;
-std::shared_ptr<serial_port> g_serial_port;
 std::unique_ptr<diagnostic_updater::Updater> diag_updater;
-std::atomic<bool> g_running{true};
-io_service io;
 
+io_service io;
+std::shared_ptr<serial_port> g_serial_port;
+
+void stop_io()
+{
+  g_serial_port->cancel();
+  io.stop();
+}
+
+int restart_io()
+{
+  if (!rclcpp::ok()) {
+    return -1;
+  }
+  io.restart();
+  return 0;
+}
 
 void loop_process(
-  rclcpp::Node::SharedPtr node,
   std::string imu_frame_id,
+  rclcpp::Node::SharedPtr node,
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub,
   int timeout
 )
@@ -89,8 +105,10 @@ void loop_process(
   imu_msg.orientation.z = 0.0;
   imu_msg.orientation.w = 1.0;
 
-  while (rclcpp::ok() && g_running) {
+  while (rclcpp::ok()) {
     boost::asio::streambuf response;
+    read_result = boost::asio::error::would_block;
+    bytes_transferred = 0;
 
     boost::asio::async_read_until(*g_serial_port, response, "\n",
       [&](const boost::system::error_code& ec, std::size_t size) {
@@ -98,7 +116,7 @@ void loop_process(
         bytes_transferred = size;
       });
 
-    io.restart();
+    if (restart_io() < 0) return;
     io.run_for(std::chrono::milliseconds(timeout));
 
     if (bytes_transferred > 0 && read_result == boost::system::errc::success) {
@@ -106,7 +124,6 @@ void loop_process(
         boost::asio::buffers_begin(response.data()), boost::asio::buffers_end(response.data()));
       if (rbuf[5] == 'B' && rbuf[6] == 'I' && rbuf[7] == 'N' && rbuf[8] == ',' && bytes_transferred == 58) {
         imu_msg.header.frame_id = imu_frame_id;
-        imu_msg.header.stamp = node->now();
 
         raw_data = ((((rbuf[15] << 8) & 0xFFFFFF00) | (rbuf[16] & 0x000000FF)));
         imu_msg.angular_velocity.x =
@@ -124,14 +141,15 @@ void loop_process(
         raw_data = ((((rbuf[25] << 8) & 0xFFFFFF00) | (rbuf[26] & 0x000000FF)));
         imu_msg.linear_acceleration.z = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
 
-        pub->publish(imu_msg);
-        rate_bound_status->tick();
+        if (rclcpp::ok()) {
+          imu_msg.header.stamp = node->now();
+          pub->publish(imu_msg);
+          rate_bound_status->tick();
+        }
       } else if (rbuf[5] == 'V' && rbuf[6] == 'E' && rbuf[7] == 'R' && rbuf[8] == ',') {
         RCLCPP_DEBUG(rclcpp::get_logger("tag_serial_driver"), "%s", rbuf.c_str());
       }
     }
-    read_result = boost::asio::error::would_block;
-    bytes_transferred = 0;
   }
 }
 
@@ -139,7 +157,7 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = rclcpp::Node::make_shared("tag_serial_driver");
-  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 1000);
+  auto pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 1000);
 
   std::string imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
   std::string port = node->declare_parameter<std::string>("port", "/dev/ttyUSB0");
@@ -179,11 +197,13 @@ int main(int argc, char ** argv)
   diag_updater->add(*rate_bound_status);
   const int timeout = static_cast<int>(1000.0 / (warn_min_freq * 0.1));  // ms
 
-  std::thread loop_thread(loop_process, node, imu_frame_id, pub, timeout);
+
+  std::thread loop_thread(loop_process, imu_frame_id, node, pub, timeout);
   rclcpp::spin(node);
 
+  stop_io();
+
   if (loop_thread.joinable()) {
-    g_running = false;
     loop_thread.join();
   }
 
