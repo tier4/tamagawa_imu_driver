@@ -11,6 +11,19 @@ endif()
 
 ### Find Packages
 find_package(ament_cmake_auto REQUIRED)
+# if ENABLE_AGNOCAST environment variable is set to 1, enable agnocast components
+# and define a compile definition to conditionally compile code that depends on agnocast
+set(ENABLE_AGNOCAST_VAL "$ENV{ENABLE_AGNOCAST}")
+if(NOT DEFINED ENV{ENABLE_AGNOCAST} OR ENABLE_AGNOCAST_VAL STREQUAL "")
+  set(ENABLE_AGNOCAST_VAL "0")
+endif()
+
+if(ENABLE_AGNOCAST_VAL STREQUAL "1")
+  find_package(agnocastlib REQUIRED)
+  find_package(agnocast_cie_thread_configurator REQUIRED)
+  add_compile_definitions(USE_AGNOCAST_ENABLED)
+endif()
+
 ament_auto_find_build_dependencies()
 
 ament_auto_add_executable(tag_serial_driver
