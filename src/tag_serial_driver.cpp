@@ -46,169 +46,90 @@
  * Ver 1.00 2019/4/4
  */
 
-#include <fcntl.h>
-#include <math.h>
-#include <signal.h>
-#include <stdio.h>
-#include <termios.h>
-#include <unistd.h>
+#include <cmath>
 #include <string>
-#include "rclcpp/rclcpp.hpp"
-#include "sensor_msgs/msg/imu.hpp"
-#include "std_msgs/msg/int32.hpp"
-#include "rate_bound_status.hpp"
-
-#include <sys/ioctl.h>
 #include <memory>
-
-std::string device = "/dev/ttyUSB0";
-std::string imu_type = "noGPS";
-std::string rate = "50";
-
-struct termios old_conf_tio;
-struct termios conf_tio;
-
-int fd;
-int counter;
-int raw_data;
-
-sensor_msgs::msg::Imu imu_msg;
-std::unique_ptr<custom_diagnostic_tasks::RateBoundStatus> rate_bound_status;
-std::unique_ptr<diagnostic_updater::Updater> diag_updater;
-
-int serial_setup(const char * device)
-{
-  int fd = open(device, O_RDWR);
-
-  speed_t BAUDRATE = B115200;
-
-  conf_tio.c_cflag += CREAD;   // 受信有効
-  conf_tio.c_cflag += CLOCAL;  // ローカルライン（モデム制御なし）
-  conf_tio.c_cflag += CS8;     // データビット:8bit
-  conf_tio.c_cflag += 0;       // ストップビット:1bit
-  conf_tio.c_cflag += 0;
-
-  cfsetispeed(&conf_tio, BAUDRATE);
-  cfsetospeed(&conf_tio, BAUDRATE);
-
-  tcsetattr(fd, TCSANOW, &conf_tio);
-  ioctl(fd, TCSETS, &conf_tio);
-  return fd;
-}
-
-void receive_ver_req([[maybe_unused]] const std_msgs::msg::Int32::ConstSharedPtr msg)
-{
-  char ver_req[] = "$TSC,VER*29\x0d\x0a";
-  int ver_req_data = write(fd, ver_req, sizeof(ver_req));
-  if (ver_req_data >= 0) {
-    RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Version Request: %s", ver_req);
-  } else {
-    RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "ERROR! Send Version Request: %s", ver_req);
-  }
-}
-
-void receive_offset_cancel_req(const std_msgs::msg::Int32::ConstSharedPtr msg)
-{
-  char offset_cancel_req[32];
-  sprintf(offset_cancel_req, "$TSC,OFC,%d\x0d\x0a", msg->data);
-  int offset_cancel_req_data = write(fd, offset_cancel_req, sizeof(offset_cancel_req));
-  if (offset_cancel_req_data >= 0) {
-    RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Offset Cancel Request: %s", offset_cancel_req);
-  } else {
-    RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "ERROR! Send Offset Cancel Request: %s", offset_cancel_req);
-  }
-
-}
-
-void receive_heading_reset_req([[maybe_unused]] const std_msgs::msg::Int32::ConstSharedPtr msg)
-{
-  char heading_reset_req[] = "$TSC,HRST*29\x0d\x0a";
-  int heading_reset_req_data = write(fd, heading_reset_req, sizeof(heading_reset_req));
-  if (heading_reset_req_data >= 0) {
-    RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Send Heading reset Request: %s", heading_reset_req);
-  } else {
-    RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "ERROR! Send Heading reset Request: %s", heading_reset_req);
-  }
-}
-
-void shutdown_cmd([[maybe_unused]] int sig)
-{
-  tcsetattr(fd, TCSANOW, &old_conf_tio);  // Revert to previous settings
-  close(fd);
-  RCLCPP_INFO(rclcpp::get_logger("tag_serial_driver"), "Port closed");
-  rclcpp::shutdown();
-}
+#include <mutex>
+#include <thread>
+#include <atomic>
+#include <iostream>
 
 #include <boost/asio.hpp>
+
+#ifdef USE_AGNOCAST_ENABLED
+#include <agnocast/agnocast_callback_isolated_executor.hpp>
+#include <agnocast_cie_thread_configurator/cie_thread_configurator.hpp>
+#endif
+
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/imu.hpp>
+#include <diagnostic_updater/diagnostic_updater.hpp>
+
+#include "rate_bound_status.hpp"
+
+
 using namespace boost::asio;
 
-int main(int argc, char ** argv)
+
+std::shared_ptr<custom_diagnostic_tasks::RateBoundStatus> rate_bound_status;
+std::unique_ptr<diagnostic_updater::Updater> diag_updater;
+
+io_service io;
+std::shared_ptr<serial_port> g_serial_port;
+
+void stop_io()
 {
-  rclcpp::init(argc, argv);
-  auto node = rclcpp::Node::make_shared("tag_serial_driver");
-  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 1000);
-  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub1 = node->create_subscription<std_msgs::msg::Int32>("receive_ver_req", 10, receive_ver_req);
-  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub2 = node->create_subscription<std_msgs::msg::Int32>("receive_offset_cancel_req", 10, receive_offset_cancel_req);
-  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub3 = node->create_subscription<std_msgs::msg::Int32>("receive_heading_reset_req", 10, receive_heading_reset_req);
+  g_serial_port->cancel();
+  io.stop();
+}
 
-  std::string imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
+int restart_io()
+{
+  if (!rclcpp::ok()) {
+    return -1;
+  }
+  io.restart();
+  return 0;
+}
 
-  std::string port = node->declare_parameter<std::string>("port", "/dev/ttyUSB0");
-
-  io_service io;
-  serial_port serial_port(io, port.c_str());
-  serial_port.set_option(serial_port_base::baud_rate(115200));
-  serial_port.set_option(serial_port_base::character_size(8));
-  serial_port.set_option(serial_port_base::flow_control(serial_port_base::flow_control::none));
-  serial_port.set_option(serial_port_base::parity(serial_port_base::parity::none));
-  serial_port.set_option(serial_port_base::stop_bits(serial_port_base::stop_bits::one));
-
-  std::string wbuf = "$TSC,BIN,30\x0d\x0a";
-  std::size_t length;
-  serial_port.write_some(buffer(wbuf));
-
-  rclcpp::Rate loop_rate(30.0);
-
+void loop_process(
+  std::string imu_frame_id,
+  rclcpp::Node::SharedPtr node,
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub,
+  int timeout
+)
+{
+  boost::system::error_code timer_result;
+  boost::system::error_code read_result;
+  std::size_t bytes_transferred = 0;
+  int raw_data;
+  std::string rbuf;
+  sensor_msgs::msg::Imu imu_msg;
   imu_msg.orientation.x = 0.0;
   imu_msg.orientation.y = 0.0;
   imu_msg.orientation.z = 0.0;
   imu_msg.orientation.w = 1.0;
 
-  auto frequency_reference = node->declare_parameter<double>("frequency_reference", 200.0);
-  auto ok_min_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.frequency_ok.min_hz", 100.0);
-  auto ok_max_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.frequency_ok.max_hz", 10000.0);
-  auto warn_min_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.frequency_warn.min_hz", 50.0);
-  auto warn_max_freq = node->declare_parameter<double>(
-    "diagnostics.rate_bound_status.frequency_warn.max_hz", 100000.0);
-  node->declare_parameter<bool>("diagnostic_updater.use_fqn", true);  // read by diagnostic updater
-  rate_bound_status = std::make_unique<custom_diagnostic_tasks::RateBoundStatus>(
-    node.get(), custom_diagnostic_tasks::RateBoundStatusParam(ok_min_freq, ok_max_freq),
-    custom_diagnostic_tasks::RateBoundStatusParam(warn_min_freq, warn_max_freq), 2, false);
-  diag_updater = std::make_unique<diagnostic_updater::Updater>(node);
-  diag_updater->setHardwareID(imu_frame_id);
-  diag_updater->setPeriod(1.0 / frequency_reference);
-  diag_updater->add(*rate_bound_status);
-  diag_updater->force_update();
-
   while (rclcpp::ok()) {
-    rclcpp::spin_some(node);
-
     boost::asio::streambuf response;
-    boost::asio::read_until(serial_port, response, "\n");
-    std::string rbuf(
-      boost::asio::buffers_begin(response.data()), boost::asio::buffers_end(response.data()));
+    read_result = boost::asio::error::would_block;
+    bytes_transferred = 0;
 
-    length = rbuf.size();
+    boost::asio::async_read_until(*g_serial_port, response, "\n",
+      [&](const boost::system::error_code& ec, std::size_t size) {
+        read_result = ec;
+        bytes_transferred = size;
+      });
 
-    if (length > 0) {
-      if (rbuf[5] == 'B' && rbuf[6] == 'I' && rbuf[7] == 'N' && rbuf[8] == ',' && length == 58) {
+    if (restart_io() < 0) return;
+    io.run_for(std::chrono::milliseconds(timeout));
+
+    if (bytes_transferred > 0 && read_result == boost::system::errc::success) {
+      rbuf = std::string(
+        boost::asio::buffers_begin(response.data()), boost::asio::buffers_end(response.data()));
+      if (rbuf[5] == 'B' && rbuf[6] == 'I' && rbuf[7] == 'N' && rbuf[8] == ',' && bytes_transferred == 58) {
         imu_msg.header.frame_id = imu_frame_id;
-        imu_msg.header.stamp = node->now();
 
-        counter = ((rbuf[11] << 8) & 0x0000FF00) | (rbuf[12] & 0x000000FF);
         raw_data = ((((rbuf[15] << 8) & 0xFFFFFF00) | (rbuf[16] & 0x000000FF)));
         imu_msg.angular_velocity.x =
           raw_data * (200 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg/s] => [rad/s]
@@ -225,13 +146,78 @@ int main(int argc, char ** argv)
         raw_data = ((((rbuf[25] << 8) & 0xFFFFFF00) | (rbuf[26] & 0x000000FF)));
         imu_msg.linear_acceleration.z = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
 
-        pub->publish(imu_msg);
-        rate_bound_status->tick();
-
+        if (rclcpp::ok()) {
+          imu_msg.header.stamp = node->now();
+          pub->publish(imu_msg);
+          rate_bound_status->tick();
+        }
       } else if (rbuf[5] == 'V' && rbuf[6] == 'E' && rbuf[7] == 'R' && rbuf[8] == ',') {
         RCLCPP_DEBUG(rclcpp::get_logger("tag_serial_driver"), "%s", rbuf.c_str());
       }
     }
+  }
+}
+
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);
+  auto node = rclcpp::Node::make_shared("tag_serial_driver");
+  auto pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 1000);
+
+  std::string imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
+  std::string port = node->declare_parameter<std::string>("port", "/dev/ttyUSB0");
+
+  g_serial_port = std::make_shared<serial_port>(io);
+  try {
+    g_serial_port->open(port);
+    g_serial_port->set_option(serial_port_base::baud_rate(115200));
+    g_serial_port->set_option(serial_port_base::character_size(8));
+    g_serial_port->set_option(serial_port_base::flow_control(serial_port_base::flow_control::none));
+    g_serial_port->set_option(serial_port_base::parity(serial_port_base::parity::none));
+    g_serial_port->set_option(serial_port_base::stop_bits(serial_port_base::stop_bits::one));
+  } catch (boost::system::system_error &e) {
+    RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "Error opening serial port: %s", e.what());
+    return 1;
+  }
+
+  std::string wbuf = "$TSC,BIN,30\x0d\x0a";
+  g_serial_port->write_some(buffer(wbuf));
+
+  auto frequency_reference = node->declare_parameter<double>("frequency_reference", 200.0);
+  auto ok_min_freq = node->declare_parameter<double>(
+    "diagnostics.rate_bound_status.frequency_ok.min_hz", 100.0);
+  auto ok_max_freq = node->declare_parameter<double>(
+    "diagnostics.rate_bound_status.frequency_ok.max_hz", 10000.0);
+  auto warn_min_freq = node->declare_parameter<double>(
+    "diagnostics.rate_bound_status.frequency_warn.min_hz", 50.0);
+  auto warn_max_freq = node->declare_parameter<double>(
+    "diagnostics.rate_bound_status.frequency_warn.max_hz", 100000.0);
+  node->declare_parameter<bool>("diagnostic_updater.use_fqn", true);  // read by diagnostic updater
+  rate_bound_status = std::make_shared<custom_diagnostic_tasks::RateBoundStatus>(
+    node.get(), custom_diagnostic_tasks::RateBoundStatusParam(ok_min_freq, ok_max_freq),
+    custom_diagnostic_tasks::RateBoundStatusParam(warn_min_freq, warn_max_freq), 2, false);
+  diag_updater = std::make_unique<diagnostic_updater::Updater>(node);
+  diag_updater->setHardwareID(imu_frame_id);
+  diag_updater->setPeriod(1.0 / frequency_reference);
+  diag_updater->add(*rate_bound_status);
+  const int timeout = static_cast<int>(1000.0 / (warn_min_freq * 0.1));  // ms
+
+#ifdef USE_AGNOCAST_ENABLED
+  const std::string thread_name = "tag_serial_driver:" + port + "_loop_thread";
+  std::thread loop_thread = agnocast_cie_thread_configurator::spawn_non_ros2_thread(
+    thread_name.c_str(), loop_process, imu_frame_id, node, pub, timeout);
+  auto executor = std::make_shared<agnocast::CallbackIsolatedAgnocastExecutor>();
+  executor->add_node(node);
+  executor->spin();
+#else
+  std::thread loop_thread(loop_process, imu_frame_id, node, pub, timeout);
+  rclcpp::spin(node);
+#endif
+
+  stop_io();
+
+  if (loop_thread.joinable()) {
+    loop_thread.join();
   }
 
   return 0;
