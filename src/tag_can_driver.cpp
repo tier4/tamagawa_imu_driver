@@ -133,7 +133,7 @@ int main(int argc, char ** argv)
   diag_updater->force_update();
   pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 100);
   rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr sub = node->create_subscription<can_msgs::msg::Frame>("/can/imu", 100, receive_CAN);
-  
+
 #ifdef USE_AGNOCAST_ENABLED
   auto executor = std::make_shared<agnocast::CallbackIsolatedAgnocastExecutor>();
   executor->add_node(node);
