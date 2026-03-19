@@ -13,17 +13,12 @@ endif()
 find_package(ament_cmake_auto REQUIRED)
 # if ENABLE_AGNOCAST environment variable is set to 1, enable agnocast components
 # and define a compile definition to conditionally compile code that depends on agnocast
-set(ENABLE_AGNOCAST_DEFAULT "$ENV{ENABLE_AGNOCAST}")
-if(ENABLE_AGNOCAST_DEFAULT STREQUAL "1")
-  set(ENABLE_AGNOCAST_DEFAULT "ON")
-else()
-  # default to OFF when the environment variable is unset or not equal to "1"
-  set(ENABLE_AGNOCAST_DEFAULT "OFF")
+set(ENABLE_AGNOCAST_VAL "$ENV{ENABLE_AGNOCAST}")
+if(NOT DEFINED ENV{ENABLE_AGNOCAST} OR ENABLE_AGNOCAST_VAL STREQUAL "")
+  set(ENABLE_AGNOCAST_VAL "0")
 endif()
 
-option(ENABLE_AGNOCAST "Enable Agnocast components" ${ENABLE_AGNOCAST_DEFAULT})
-
-if(ENABLE_AGNOCAST)
+if(ENABLE_AGNOCAST_VAL STREQUAL "1")
   find_package(agnocastlib REQUIRED)
   find_package(agnocast_cie_thread_configurator REQUIRED)
   add_compile_definitions(USE_AGNOCAST_ENABLED)
