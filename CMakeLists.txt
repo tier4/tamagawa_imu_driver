@@ -26,7 +26,6 @@ option(ENABLE_AGNOCAST "Enable Agnocast components" ${ENABLE_AGNOCAST_DEFAULT})
 if(ENABLE_AGNOCAST)
   find_package(agnocastlib REQUIRED)
   find_package(agnocast_cie_thread_configurator REQUIRED)
-  add_compile_definitions(USE_AGNOCAST_ENABLED)
 endif()
 
 ament_auto_find_build_dependencies()
@@ -40,7 +39,9 @@ ament_auto_add_executable(tag_can_driver
 )
 
 if(ENABLE_AGNOCAST)
+  target_compile_definitions(tag_can_driver PRIVATE USE_AGNOCAST_ENABLED)
   ament_target_dependencies(tag_can_driver agnocastlib)
+  target_compile_definitions(tag_serial_driver PRIVATE USE_AGNOCAST_ENABLED)
   ament_target_dependencies(tag_serial_driver agnocastlib agnocast_cie_thread_configurator)
 endif()
 
