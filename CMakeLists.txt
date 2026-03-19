@@ -39,6 +39,11 @@ ament_auto_add_executable(tag_can_driver
 	src/tag_can_driver.cpp
 )
 
+if(ENABLE_AGNOCAST)
+  ament_target_dependencies(tag_can_driver agnocastlib)
+  ament_target_dependencies(tag_serial_driver agnocastlib agnocast_cie_thread_configurator)
+endif()
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
