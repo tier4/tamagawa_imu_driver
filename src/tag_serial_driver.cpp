@@ -56,6 +56,11 @@
 
 #include <boost/asio.hpp>
 
+#ifdef USE_AGNOCAST_ENABLED
+#include <agnocast/agnocast_callback_isolated_executor.hpp>
+#include <agnocast_cie_thread_configurator/cie_thread_configurator.hpp>
+#endif
+
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <diagnostic_updater/diagnostic_updater.hpp>
@@ -197,9 +202,17 @@ int main(int argc, char ** argv)
   diag_updater->add(*rate_bound_status);
   const int timeout = static_cast<int>(1000.0 / (warn_min_freq * 0.1));  // ms
 
-
+#ifdef USE_AGNOCAST_ENABLED
+  const std::string thread_name = "tag_serial_driver:" + port + "_loop_thread";
+  std::thread loop_thread = agnocast_cie_thread_configurator::spawn_non_ros2_thread(
+    thread_name.c_str(), loop_process, imu_frame_id, node, pub, timeout);
+  auto executor = std::make_shared<agnocast::CallbackIsolatedAgnocastExecutor>();
+  executor->add_node(node);
+  executor->spin();
+#else
   std::thread loop_thread(loop_process, imu_frame_id, node, pub, timeout);
   rclcpp::spin(node);
+#endif
 
   stop_io();
 
