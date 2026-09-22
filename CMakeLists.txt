@@ -31,11 +31,11 @@ endif()
 ament_auto_find_build_dependencies()
 
 ament_auto_add_executable(tag_serial_driver
-	src/tag_serial_driver.cpp
+  src/tag_serial_driver.cpp
 )
 
 ament_auto_add_executable(tag_can_driver
-	src/tag_can_driver.cpp
+  src/tag_can_driver.cpp
 )
 
 if(ENABLE_AGNOCAST)
