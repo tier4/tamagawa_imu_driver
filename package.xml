@@ -7,11 +7,9 @@
 
   <maintainer email="yamato.ando@tier4.jp">Yamato Ando</maintainer>
   <maintainer email="ryo.watanabe@tier4.jp">Ryo Watanabe</maintainer>
-  
-  <license>Apache License 2.0</license>
-
   <maintainer email="osamu.sekino@tier4.jp">Osamu Sekino</maintainer>
 
+  <license>Apache License 2.0</license>
   <license>BSD</license>
 
   <buildtool_depend>ament_cmake_auto</buildtool_depend>
