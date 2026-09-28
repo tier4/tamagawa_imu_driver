@@ -27,6 +27,8 @@ pre-commit run --all-files
 
 C++ and CMake style are checked by ament during package validation. The repository-owned pre-commit configuration avoids introducing conflicting clang-format or cpplint settings.
 
+Because the package is at the repository root, its six lint tests explicitly check `src`, `launch`, `CMakeLists.txt`, `package.xml`, `CONTRIBUTING.md`, and `LICENSE`. Generated workspace files and downloaded CI tools are outside that scope. Register any new source directories with the corresponding checks in `CMakeLists.txt`.
+
 The contribution notice keeps the bare code fence required by `ament_copyright`; `CONTRIBUTING.md` disables only Markdown's code-fence language rule for that reason.
 
 ## Maintenance
