@@ -55,6 +55,7 @@
 #endif
 
 #include <memory>
+#include <string>
 
 rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub;
 std::unique_ptr<custom_diagnostic_tasks::RateBoundStatus> rate_bound_status;
@@ -69,9 +70,9 @@ int16_t acceleration_y_raw = 0;
 int16_t acceleration_z_raw = 0;
 
 sensor_msgs::msg::Imu imu_msg;
-std::string imu_frame_id;
 
-void receive_CAN(const can_msgs::msg::Frame::ConstSharedPtr msg)
+void receive_CAN(
+  const can_msgs::msg::Frame::ConstSharedPtr msg, const std::string & imu_frame_id)
 {
   if (msg->id == 0x319) {
     imu_msg.header.frame_id = imu_frame_id;
@@ -110,7 +111,7 @@ int main(int argc, char ** argv)
   rclcpp::init(argc, argv);
 
   auto node = rclcpp::Node::make_shared("tag_can_driver");
-  imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
+  const auto imu_frame_id = node->declare_parameter<std::string>("imu_frame_id", "imu");
   auto frequency_reference = node->declare_parameter<double>("frequency_reference", 10.0);
   auto ok_min_freq = node->declare_parameter<double>(
     "diagnostics.rate_bound_status.frequency_ok.min_hz", 100.0);
@@ -130,7 +131,12 @@ int main(int argc, char ** argv)
   diag_updater->add(*rate_bound_status);
   diag_updater->force_update();
   pub = node->create_publisher<sensor_msgs::msg::Imu>("imu/data_raw", 100);
-  rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr sub = node->create_subscription<can_msgs::msg::Frame>("/can/imu", 100, receive_CAN);
+  rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr sub =
+    node->create_subscription<can_msgs::msg::Frame>(
+    "/can/imu", 100,
+    [imu_frame_id](const can_msgs::msg::Frame::ConstSharedPtr msg) {
+      receive_CAN(msg, imu_frame_id);
+    });
 
 #ifdef USE_AGNOCAST_ENABLED
   auto executor = std::make_shared<agnocast::CallbackIsolatedAgnocastExecutor>();

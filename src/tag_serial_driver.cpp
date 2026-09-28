@@ -66,7 +66,10 @@
 #include "rate_bound_status.hpp"
 
 
-using namespace boost::asio;
+using boost::asio::buffer;
+using boost::asio::io_service;
+using boost::asio::serial_port;
+using boost::asio::serial_port_base;
 
 
 std::shared_ptr<custom_diagnostic_tasks::RateBoundStatus> rate_bound_status;
@@ -114,18 +117,20 @@ void loop_process(
     bytes_transferred = 0;
 
     boost::asio::async_read_until(*g_serial_port, response, "\n",
-      [&](const boost::system::error_code& ec, std::size_t size) {
+      [&](const boost::system::error_code & ec, std::size_t size) {
         read_result = ec;
         bytes_transferred = size;
       });
 
-    if (restart_io() < 0) return;
+    if (restart_io() < 0) {return;}
     io.run_for(std::chrono::milliseconds(timeout));
 
     if (bytes_transferred > 0 && read_result == boost::system::errc::success) {
       rbuf = std::string(
         boost::asio::buffers_begin(response.data()), boost::asio::buffers_end(response.data()));
-      if (rbuf[5] == 'B' && rbuf[6] == 'I' && rbuf[7] == 'N' && rbuf[8] == ',' && bytes_transferred == 58) {
+      if (rbuf[5] == 'B' && rbuf[6] == 'I' && rbuf[7] == 'N' && rbuf[8] == ',' &&
+        bytes_transferred == 58)
+      {
         imu_msg.header.frame_id = imu_frame_id;
 
         raw_data = ((((rbuf[15] << 8) & 0xFFFFFF00) | (rbuf[16] & 0x000000FF)));
@@ -173,8 +178,9 @@ int main(int argc, char ** argv)
     g_serial_port->set_option(serial_port_base::flow_control(serial_port_base::flow_control::none));
     g_serial_port->set_option(serial_port_base::parity(serial_port_base::parity::none));
     g_serial_port->set_option(serial_port_base::stop_bits(serial_port_base::stop_bits::one));
-  } catch (boost::system::system_error &e) {
-    RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "Error opening serial port: %s", e.what());
+  } catch (boost::system::system_error & e) {
+    RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "Error opening serial port: %s",
+      e.what());
     return 1;
   }
 

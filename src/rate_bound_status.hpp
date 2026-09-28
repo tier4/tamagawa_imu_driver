@@ -15,19 +15,19 @@
 #ifndef RATE_BOUND_STATUS_HPP_
 #define RATE_BOUND_STATUS_HPP_
 
-#include <diagnostic_updater/diagnostic_updater.hpp>
-
-#include <diagnostic_msgs/msg/diagnostic_status.hpp>
-
 #include <iomanip>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <optional>
-#include <rcl/time.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <variant>
+
+#include "diagnostic_msgs/msg/diagnostic_status.hpp"
+#include "diagnostic_updater/diagnostic_updater.hpp"
+#include "rcl/time.h"
 
 namespace custom_diagnostic_tasks
 {
@@ -38,7 +38,7 @@ namespace custom_diagnostic_tasks
 struct RateBoundStatusParam
 {
   RateBoundStatusParam(const double min_freq, const double max_freq)
-      : min_frequency(min_freq), max_frequency(max_freq){}
+  : min_frequency(min_freq), max_frequency(max_freq) {}
 
   double min_frequency;
   double max_frequency;
@@ -58,7 +58,7 @@ private:
   struct StateBase
   {
     StateBase(const unsigned char lv, const std::string m)
-        : level(lv), num_observations(1), msg(m) {}
+    : level(lv), num_observations(1), msg(m) {}
 
     unsigned char level;
     size_t num_observations;
@@ -68,34 +68,34 @@ private:
   struct Stale : public StateBase
   {
     Stale()
-        : StateBase(diagnostic_msgs::msg::DiagnosticStatus::STALE,
-                    "Topic has not been received yet") {}
+    : StateBase(diagnostic_msgs::msg::DiagnosticStatus::STALE,
+        "Topic has not been received yet") {}
   };
 
   struct Ok : public StateBase
   {
     Ok()
-        : StateBase(diagnostic_msgs::msg::DiagnosticStatus::OK,
-                    "Rate is reasonable") {}
+    : StateBase(diagnostic_msgs::msg::DiagnosticStatus::OK,
+        "Rate is reasonable") {}
   };
 
   struct Warn : public StateBase
   {
     Warn()
-        : StateBase(diagnostic_msgs::msg::DiagnosticStatus::WARN,
-                    "Rate is within warning range") {}
+    : StateBase(diagnostic_msgs::msg::DiagnosticStatus::WARN,
+        "Rate is within warning range") {}
   };
 
   struct Error : public StateBase
   {
     Error()
-        : StateBase(diagnostic_msgs::msg::DiagnosticStatus::ERROR,
-                    "Rate is out of valid range") {}
+    : StateBase(diagnostic_msgs::msg::DiagnosticStatus::ERROR,
+        "Rate is out of valid range") {}
   };
 
   using StateHolder = std::variant<Stale, Ok, Warn, Error>;
 
- public:
+public:
   /**
    * \brief Constructs RateBoundstatus, which inherits diagnostic_updater::DiagnosticTask.
    *
@@ -112,16 +112,17 @@ private:
    * \param name The arbitrary string to be assigned for this diagnostic task.
    * This name will not be exposed in the actual published topics.
    */
-  RateBoundStatus(const rclcpp::Node* parent_node,
-                  const RateBoundStatusParam& ok_params,
-                  const RateBoundStatusParam& warn_params,
-                  const size_t num_frame_transition = 1,
-                  const bool immediate_error_report = true,
-                  const std::string& name = "rate bound check")
-      : DiagnosticTask(name), ok_params_(ok_params), warn_params_(warn_params),
-        num_frame_transition_(num_frame_transition),
-        immediate_error_report_(immediate_error_report), zero_seen_(false),
-        candidate_state_(Stale{}), current_state_(Stale{})
+  RateBoundStatus(
+    const rclcpp::Node * parent_node,
+    const RateBoundStatusParam & ok_params,
+    const RateBoundStatusParam & warn_params,
+    const size_t num_frame_transition = 1,
+    const bool immediate_error_report = true,
+    const std::string & name = "rate bound check")
+  : DiagnosticTask(name), ok_params_(ok_params), warn_params_(warn_params),
+    num_frame_transition_(num_frame_transition),
+    immediate_error_report_(immediate_error_report), zero_seen_(false),
+    candidate_state_(Stale{}), current_state_(Stale{})
   {
     if (num_frame_transition < 1) {
       num_frame_transition_ = 1;
@@ -129,7 +130,8 @@ private:
 
     // Confirm `warn_params` surely has wider range than `ok_params`
     if (warn_params_.min_frequency >= ok_params_.min_frequency ||
-      ok_params_.max_frequency >= warn_params_.max_frequency) {
+      ok_params_.max_frequency >= warn_params_.max_frequency)
+    {
       throw std::runtime_error(
           "Invalid range parameters were detected. warn_params should specify a range "
           "that includes a range of ok_params.");
@@ -162,7 +164,7 @@ private:
       zero_seen_ = false;
       double delta = stamp - previous_frame_timestamp_.value();
       frequency_ = (delta < 10 * std::numeric_limits<double>::epsilon()) ?
-                   std::numeric_limits<double>::infinity() : 1. / delta;
+        std::numeric_limits<double>::infinity() : 1. / delta;
     }
     previous_frame_timestamp_ = stamp;
   }
@@ -170,7 +172,7 @@ private:
   /**
    * \brief function called every update
    */
-  void run(diagnostic_updater::DiagnosticStatusWrapper& stat) override
+  void run(diagnostic_updater::DiagnosticStatusWrapper & stat) override
   {
     std::unique_lock<std::mutex> lock(lock_);
 
@@ -179,10 +181,12 @@ private:
     if (!frequency_ || zero_seen_) {
       frame_result.emplace<Stale>();
     } else {
+      const bool in_warn_range =
+        (warn_params_.min_frequency <= frequency_ && frequency_ <= ok_params_.min_frequency) ||
+        (ok_params_.max_frequency <= frequency_ && frequency_ <= warn_params_.max_frequency);
       if (ok_params_.min_frequency < frequency_ && frequency_ < ok_params_.max_frequency) {
         frame_result.emplace<Ok>();
-      } else if ((warn_params_.min_frequency <= frequency_ && frequency_ <= ok_params_.min_frequency) ||
-                 (ok_params_.max_frequency <= frequency_ && frequency_ <= warn_params_.max_frequency)) {
+      } else if (in_warn_range) {
         frame_result.emplace<Warn>();
       } else {
         frame_result.emplace<Error>();
@@ -203,15 +207,15 @@ private:
         frequency_ = freq_from_prev_tick;
         auto max_frame_period_s = 1. / warn_params_.min_frequency;
         // Minimum frames to assume skipped if 'tick' calls occur at 'warn_params_.min_frequency'.
-        num_frame_skipped  = static_cast<size_t>(delta / max_frame_period_s);
+        num_frame_skipped = static_cast<size_t>(delta / max_frame_period_s);
       }
     }
 
     // If the classify result is same as previous one, count the number of observation
     // Otherwise, update candidate
-    if (candidate_state_.index() == frame_result.index()) {  // if result has the same status as candidate
-      std::visit([](auto& s){
-        s.num_observations += 1;
+    if (candidate_state_.index() == frame_result.index()) {
+      std::visit([](auto & s){
+          s.num_observations += 1;
       }, candidate_state_);
     } else {
       candidate_state_ = frame_result;
@@ -221,11 +225,12 @@ private:
     // - immediate error report is required and the observed state is error
     // - Or the same state is observed multiple times
     if ((immediate_error_report_ && std::holds_alternative<Error>(candidate_state_)) ||
-        (is_valid_observation && get_num_observations(candidate_state_) >= num_frame_transition_) ||
-        (!is_valid_observation && num_frame_skipped >= num_frame_transition_)) {
+      (is_valid_observation && get_num_observations(candidate_state_) >= num_frame_transition_) ||
+      (!is_valid_observation && num_frame_skipped >= num_frame_transition_))
+    {
       current_state_ = candidate_state_;
-      std::visit([](auto& s) {
-        s.num_observations = 1;
+      std::visit([](auto & s) {
+          s.num_observations = 1;
       }, candidate_state_);
     }
 
@@ -283,23 +288,28 @@ protected:
 
   std::shared_ptr<rclcpp::Clock> clock_;
 
-  inline double get_now() {
+  inline double get_now()
+  {
     return clock_->now().seconds();
   }
 
-  static unsigned char get_level(const StateHolder& state) {
-    return std::visit([](const auto& s){return s.level;}, state);
+  static unsigned char get_level(const StateHolder & state)
+  {
+    return std::visit([](const auto & s){return s.level;}, state);
   }
 
-  static size_t get_num_observations(const StateHolder& state) {
-    return std::visit([](const auto& s){return s.num_observations;}, state);
+  static size_t get_num_observations(const StateHolder & state)
+  {
+    return std::visit([](const auto & s){return s.num_observations;}, state);
   }
 
-  static std::string get_msg(const StateHolder& state) {
-    return std::visit([](const auto& s){return s.msg;}, state);
+  static std::string get_msg(const StateHolder & state)
+  {
+    return std::visit([](const auto & s){return s.msg;}, state);
   }
 
-  static std::string get_level_string(unsigned char level) {
+  static std::string get_level_string(unsigned char level)
+  {
     switch(level) {
       case diagnostic_msgs::msg::DiagnosticStatus::OK:
         return "OK";
@@ -313,7 +323,6 @@ protected:
         return "UNDEFINED";
     }
   }
-
 };  // class RateBoundStatus
 
 }  // namespace custom_diagnostic_tasks
