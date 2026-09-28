@@ -1,0 +1,53 @@
+# Repo-owned adaptation of the Autoware draft-release workflow.
+name: github-release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag-name:
+        description: The existing tag to draft a release for
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.tag-name || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  github-release:
+    runs-on: ubuntu-24.04
+    env:
+      TAG_NAME: ${{ inputs.tag-name || github.ref_name }}
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ env.TAG_NAME }}
+
+      - name: Generate changelog
+        id: changelog
+        uses: autowarefoundation/autoware-github-actions/generate-changelog@v1
+        with:
+          git-cliff-args: --tag-pattern "^(\d+)\.(\d+)\.(\d+)$" --latest
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ steps.changelog.outputs.changelog }}
+        run: |
+          if is_draft=$(gh release view "$TAG_NAME" --json isDraft --jq .isDraft); then
+            if [ "$is_draft" != "true" ]; then
+              echo "Release $TAG_NAME is already published; leaving it unchanged."
+              exit 0
+            fi
+            gh release edit "$TAG_NAME" --draft --title "$TAG_NAME" --notes "$NOTES"
+          else
+            gh release create "$TAG_NAME" --verify-tag --draft --title "$TAG_NAME" --notes "$NOTES"
+          fi

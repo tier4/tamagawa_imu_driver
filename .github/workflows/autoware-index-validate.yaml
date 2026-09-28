@@ -1,0 +1,28 @@
+name: autoware-index-validate
+
+# Resolve the latest published Autoware Core image for each ROS distro.
+# Humble is checked here independently of the package's Index registration.
+on:
+  push:
+    branches: [ros2]
+  pull_request:
+    branches: [ros2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        ros_distro: [humble, jazzy]
+    uses: autowarefoundation/autoware-index-github-actions/.github/workflows/validate-package.yaml@main
+    with:
+      ros_distro: ${{ matrix.ros_distro }}
+      package_name: tamagawa_imu_driver
+      pull-ccache: ${{ github.event_name != 'push' || github.ref != 'refs/heads/ros2' }}
+      push-ccache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/ros2' }}
+      cache-key-element: build
+      concurrency-group: autoware-index-validate-${{ matrix.ros_distro }}-${{ github.event_name == 'push' && 'ros2' || github.ref }}
