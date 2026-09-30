@@ -46,20 +46,8 @@ if(ENABLE_AGNOCAST)
 endif()
 
 if(BUILD_TESTING)
-  # This package lives at the repository root. Scope linting to maintained
-  # files so workspace build products and CI tool checkouts are not scanned.
-  find_package(ament_cmake_copyright REQUIRED)
-  ament_copyright(CONTRIBUTING.md LICENSE src)
-  find_package(ament_cmake_cppcheck REQUIRED)
-  ament_cppcheck(src)
-  find_package(ament_cmake_cpplint REQUIRED)
-  ament_cpplint(src)
-  find_package(ament_cmake_lint_cmake REQUIRED)
-  ament_lint_cmake(CMakeLists.txt)
-  find_package(ament_cmake_uncrustify REQUIRED)
-  ament_uncrustify(src)
-  find_package(ament_cmake_xmllint REQUIRED)
-  ament_xmllint(package.xml launch)
+  find_package(ament_lint_auto REQUIRED)
+  ament_lint_auto_find_test_dependencies()
 endif()
 
 ament_auto_package(INSTALL_TO_SHARE
