@@ -1,0 +1,7 @@
+# Repo-owned: do not require Autoware Foundation's organization-specific labels.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

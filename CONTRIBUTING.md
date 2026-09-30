@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD040 -->
+
 # Contributing
 
 See <https://autowarefoundation.github.io/autoware-documentation/main/contributing/>.
