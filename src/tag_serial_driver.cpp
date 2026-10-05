@@ -100,7 +100,6 @@ void loop_process(
   int timeout
 )
 {
-  boost::system::error_code timer_result;
   boost::system::error_code read_result;
   std::size_t bytes_transferred = 0;
   int raw_data;
@@ -116,7 +115,8 @@ void loop_process(
     read_result = boost::asio::error::would_block;
     bytes_transferred = 0;
 
-    boost::asio::async_read_until(*g_serial_port, response, "\n",
+    boost::asio::async_read_until(
+      *g_serial_port, response, "\n",
       [&](const boost::system::error_code & ec, std::size_t size) {
         read_result = ec;
         bytes_transferred = size;
@@ -179,7 +179,8 @@ int main(int argc, char ** argv)
     g_serial_port->set_option(serial_port_base::parity(serial_port_base::parity::none));
     g_serial_port->set_option(serial_port_base::stop_bits(serial_port_base::stop_bits::one));
   } catch (boost::system::system_error & e) {
-    RCLCPP_ERROR(rclcpp::get_logger("tag_serial_driver"), "Error opening serial port: %s",
+    RCLCPP_ERROR(
+      rclcpp::get_logger("tag_serial_driver"), "Error opening serial port: %s",
       e.what());
     return 1;
   }

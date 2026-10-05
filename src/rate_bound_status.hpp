@@ -97,7 +97,7 @@ private:
 
 public:
   /**
-   * \brief Constructs RateBoundstatus, which inherits diagnostic_updater::DiagnosticTask.
+   * \brief Constructs RateBoundStatus, which inherits diagnostic_updater::DiagnosticTask.
    *
    * \param parent_node The parent node from which the parameters and clock are retrieved.
    * \param ok_params The pair of min/max frequency for the topic rate to be recognized as "OK".
@@ -133,11 +133,11 @@ public:
       ok_params_.max_frequency >= warn_params_.max_frequency)
     {
       throw std::runtime_error(
-          "Invalid range parameters were detected. warn_params should specify a range "
-          "that includes a range of ok_params.");
+              "Invalid range parameters were detected. warn_params should specify a range "
+              "that includes a range of ok_params.");
     }
 
-    // select clock according to the use_sim_time paramter set to the parent
+    // select clock according to the use_sim_time parameter set to the parent
     bool use_sim_time = false;
     if (parent_node->has_parameter("use_sim_time")) {
       use_sim_time = parent_node->get_parameter("use_sim_time").as_bool();
@@ -214,9 +214,10 @@ public:
     // If the classify result is same as previous one, count the number of observation
     // Otherwise, update candidate
     if (candidate_state_.index() == frame_result.index()) {
-      std::visit([](auto & s){
+      std::visit(
+        [](auto & s) {
           s.num_observations += 1;
-      }, candidate_state_);
+        }, candidate_state_);
     } else {
       candidate_state_ = frame_result;
     }
@@ -229,9 +230,10 @@ public:
       (!is_valid_observation && num_frame_skipped >= num_frame_transition_))
     {
       current_state_ = candidate_state_;
-      std::visit([](auto & s) {
+      std::visit(
+        [](auto & s) {
           s.num_observations = 1;
-      }, candidate_state_);
+        }, candidate_state_);
     }
 
     stat.summary(get_level(current_state_), get_msg(current_state_));
@@ -295,22 +297,22 @@ protected:
 
   static unsigned char get_level(const StateHolder & state)
   {
-    return std::visit([](const auto & s){return s.level;}, state);
+    return std::visit([](const auto & s) {return s.level;}, state);
   }
 
   static size_t get_num_observations(const StateHolder & state)
   {
-    return std::visit([](const auto & s){return s.num_observations;}, state);
+    return std::visit([](const auto & s) {return s.num_observations;}, state);
   }
 
   static std::string get_msg(const StateHolder & state)
   {
-    return std::visit([](const auto & s){return s.msg;}, state);
+    return std::visit([](const auto & s) {return s.msg;}, state);
   }
 
   static std::string get_level_string(unsigned char level)
   {
-    switch(level) {
+    switch (level) {
       case diagnostic_msgs::msg::DiagnosticStatus::OK:
         return "OK";
       case diagnostic_msgs::msg::DiagnosticStatus::WARN:
